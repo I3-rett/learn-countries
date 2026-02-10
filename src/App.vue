@@ -11,9 +11,16 @@ const targetCode = ref<string | null>(null)
 const selectedCode = ref<string | null>(null)
 const reveal = ref(false)
 const isCorrect = ref<boolean | null>(null)
+const correctCount = ref(0)
+const totalCount = ref(0)
+const foundCodes = ref(new Set<string>())
+const failedCodes = ref(new Set<string>())
 
 const targetCountry = computed(() =>
   targetCode.value ? countries.value[targetCode.value] : undefined
+)
+const selectedCountry = computed(() =>
+  selectedCode.value ? countries.value[selectedCode.value] : undefined
 )
 
 const statusLabel = computed(() => {
@@ -75,8 +82,12 @@ const answerDetail = computed(() => {
   return `Capital: ${targetCountry.value.capital} · Region: ${regionLabel}`
 })
 
+const foundCodesList = computed(() => Array.from(foundCodes.value))
+
 const pickNewTarget = () => {
-  const availableCodes = Object.keys(countries.value)
+  const availableCodes = Object.keys(countries.value).filter(
+    (code) => !foundCodes.value.has(code) && !failedCodes.value.has(code)
+  )
 
   if (!availableCodes.length) {
     return
@@ -104,7 +115,32 @@ const confirmGuess = () => {
 
   reveal.value = true
   isCorrect.value = selectedCode.value === targetCode.value
+  totalCount.value += 1
+
+  if (isCorrect.value) {
+    correctCount.value += 1
+    foundCodes.value.add(targetCode.value)
+  } else {
+    failedCodes.value.add(targetCode.value)
+  }
 }
+
+const advanceRound = () => {
+  pickNewTarget()
+}
+
+const actionLabel = computed(() => (reveal.value ? 'Next' : 'Confirm'))
+const actionDisabled = computed(() => {
+  if (loading.value || !!errorMessage.value) {
+    return true
+  }
+
+  if (reveal.value) {
+    return false
+  }
+
+  return !selectedCode.value
+})
 
 const resetRound = () => {
   selectedCode.value = null
@@ -140,10 +176,10 @@ onMounted(async () => {
         <div class="flex items-center justify-between gap-3">
           <button
             class="ghost h-12 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40"
-            @click="confirmGuess"
-            :disabled="loading || !!errorMessage || reveal || !selectedCode"
+            @click="reveal ? advanceRound() : confirmGuess()"
+            :disabled="actionDisabled"
           >
-            Confirm
+            {{ actionLabel }}
           </button>
           <div
             class="flex h-12 items-center rounded-2xl px-4 text-center text-lg font-semibold"
@@ -152,6 +188,7 @@ onMounted(async () => {
             {{ statusLabel }}
           </div>
         </div>
+        <p class="text-sm font-semibold text-ink/70">Score: {{ correctCount }}/{{ totalCount }}</p>
         <p class="text-sm text-ink/70">{{ hintLabel }}</p>
       </div>
     </header>
@@ -162,6 +199,7 @@ onMounted(async () => {
           :target-code="targetCode"
           :selected-code="selectedCode"
           :reveal="reveal"
+          :found-codes="foundCodesList"
           @country-selected="handleGuess"
         />
       </section>
@@ -170,6 +208,9 @@ onMounted(async () => {
         <div class="panel p-6">
           <p class="text-xs uppercase tracking-[0.3em] text-ink/60">Target</p>
           <h2 class="mt-3 text-4xl text-ink">{{ promptLabel }}</h2>
+          <p v-if="targetCountry?.frenchName" class="mt-2 text-lg text-ink/60">
+            {{ targetCountry.frenchName }}
+          </p>
           <p class="mt-3 text-base text-ink/70">
             Click the country that matches the prompt, then confirm your choice.
           </p>
@@ -180,6 +221,12 @@ onMounted(async () => {
           <div class="mt-4 flex flex-col gap-6 md:flex-row md:items-stretch md:justify-between">
             <div class="md:w-1/2">
               <p class="text-xl text-ink md:text-2xl">{{ answerSummary }}</p>
+              <p
+                v-if="reveal && isCorrect === false && selectedCountry"
+                class="mt-2 text-sm text-ink/70 md:text-base"
+              >
+                Your guess: <span class="font-semibold text-ink">{{ selectedCountry.name }}</span>
+              </p>
               <p v-if="reveal" class="mt-2 text-sm text-ink/70 md:text-base">
                 <span class="font-semibold text-ink">Capital:</span>
                 <span class="font-semibold text-ink"> {{ targetCountry?.capital || 'Unknown' }}</span>

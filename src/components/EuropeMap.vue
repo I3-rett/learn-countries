@@ -7,6 +7,7 @@ type Props = {
   targetCode: string | null
   selectedCode: string | null
   reveal: boolean
+  foundCodes: string[]
 }
 
 const props = defineProps<Props>()
@@ -18,7 +19,7 @@ let map: L.Map | null = null
 let geoLayer: L.GeoJSON | null = null
 
 const GEOJSON_URL =
-  'https://raw.githubusercontent.com/leakyMirror/map-of-europe/master/GeoJSON/europe.geojson'
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
 
 const baseStyle: L.PathOptions = {
   color: '#1a1f2b',
@@ -39,6 +40,13 @@ const correctStyle: L.PathOptions = {
   weight: 1.6,
   fillColor: '#2bb673',
   fillOpacity: 0.9,
+}
+
+const foundStyle: L.PathOptions = {
+  color: '#0d0f14',
+  weight: 1.2,
+  fillColor: '#2bb673',
+  fillOpacity: 0.35,
 }
 
 const wrongStyle: L.PathOptions = {
@@ -66,13 +74,55 @@ const aliasMap: Record<string, string> = {
   FX: 'FR',
 }
 
+const europeSet = new Set(EUROPE_CODES)
+const isEuropeCode = (code: string) => europeSet.has(code as (typeof EUROPE_CODES)[number])
+
+const normalizeCode = (value: string) => {
+  const upperCode = value.toUpperCase()
+  return aliasMap[upperCode] ?? upperCode
+}
+
+const pickCodeFromProperties = (properties: Record<string, unknown> | undefined) => {
+  if (!properties) {
+    return ''
+  }
+
+  for (const value of Object.values(properties)) {
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const trimmed = value.trim()
+
+    if (trimmed.length !== 2) {
+      continue
+    }
+
+    const normalized = normalizeCode(trimmed)
+
+    if (isEuropeCode(normalized)) {
+      return normalized
+    }
+  }
+
+  return ''
+}
+
 const getFeatureCode = (feature: GeoJSON.Feature | undefined) => {
   if (!feature) {
     return ''
   }
 
   const properties = feature.properties as
-    | { iso_a2?: string; ISO_A2?: string; ISO_A2_EH?: string; ISO2?: string; iso2?: string }
+    | {
+        iso_a2?: string
+        ISO_A2?: string
+        ISO_A2_EH?: string
+        ISO2?: string
+        iso2?: string
+        ADM0_A3?: string
+        SOV_A3?: string
+      }
     | undefined
 
   const rawCode =
@@ -83,20 +133,26 @@ const getFeatureCode = (feature: GeoJSON.Feature | undefined) => {
     properties?.iso2 ||
     (feature.id as string | undefined)
 
-  if (!rawCode) {
-    return ''
+  if (rawCode && rawCode !== '-99') {
+    return normalizeCode(rawCode)
   }
 
-  const upperCode = rawCode.toUpperCase()
-  return aliasMap[upperCode] ?? upperCode
-}
+  const adm0 = properties?.ADM0_A3 || properties?.SOV_A3
 
-const europeSet = new Set(EUROPE_CODES)
-const isEuropeCode = (code: string) => europeSet.has(code as (typeof EUROPE_CODES)[number])
+  if (adm0 === 'XKX') {
+    return 'XK'
+  }
+
+  return pickCodeFromProperties(properties as Record<string, unknown> | undefined)
+}
 
 const getStyleForCode = (code: string) => {
   if (code && !isEuropeCode(code)) {
     return mutedStyle
+  }
+
+  if (props.foundCodes.includes(code)) {
+    return foundStyle
   }
 
   if (props.reveal && props.targetCode && code === props.targetCode) {
@@ -149,6 +205,10 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
         return
       }
 
+      if (props.foundCodes.includes(code)) {
+        return
+      }
+
       const pathLayer = layer as L.Path
 
       pathLayer.on('mouseover', () => {
@@ -184,7 +244,7 @@ onMounted(async () => {
   map = L.map(mapEl.value, {
     zoomControl: false,
     minZoom: 4,
-    maxZoom: 8,
+    maxZoom: 10,
     scrollWheelZoom: true,
   })
 
@@ -192,7 +252,7 @@ onMounted(async () => {
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    maxZoom: 8,
+    maxZoom: 10,
   }).addTo(map)
 
   L.control.zoom({ position: 'bottomright' }).addTo(map)
@@ -222,7 +282,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [props.reveal, props.selectedCode, props.targetCode],
+  () => [props.reveal, props.selectedCode, props.targetCode, props.foundCodes],
   () => {
     applyLayerStyles()
   }

@@ -3,6 +3,7 @@ import { EUROPE_CODES, type EuropeCode } from '../data/europe'
 export type CountryInfo = {
   code: EuropeCode
   name: string
+  frenchName?: string
   capital: string
   region?: string
   subregion?: string
@@ -13,6 +14,7 @@ export type CountryInfo = {
 type ApiCountry = {
   cca2: string
   name?: { common?: string }
+  translations?: { fra?: { common?: string } }
   capital?: string[]
   region?: string
   subregion?: string
@@ -23,7 +25,7 @@ const API_URL = 'https://restcountries.com/v3.1/alpha'
 
 export async function fetchEuropeCountries(): Promise<Record<EuropeCode, CountryInfo>> {
   const codes = EUROPE_CODES.join(',')
-  const url = `${API_URL}?codes=${codes}&fields=name,capital,cca2,region,subregion,flags`
+  const url = `${API_URL}?codes=${codes}&fields=name,translations,capital,cca2,region,subregion,flags`
   const response = await fetch(url)
 
   if (!response.ok) {
@@ -43,6 +45,7 @@ export async function fetchEuropeCountries(): Promise<Record<EuropeCode, Country
     countryMap[code] = {
       code,
       name: country.name?.common ?? code,
+      frenchName: country.translations?.fra?.common,
       capital: country.capital?.[0] ?? 'Unknown',
       region: country.region,
       subregion: country.subregion,
