@@ -54,6 +54,14 @@ const correctStyle: L.PathOptions = {
   fillOpacity: 0.98,
 }
 
+const answerStyle: L.PathOptions = {
+  color: '#0d0f14',
+  weight: 2.6,
+  dashArray: '',
+  fillColor: '#d32f2f',
+  fillOpacity: 1,
+}
+
 const foundStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.2,
@@ -186,6 +194,29 @@ const getFeatureCode = (feature: GeoJSON.Feature | undefined) => {
   return pickCodeFromProperties(properties as Record<string, unknown> | undefined)
 }
 
+const getFeatureName = (feature: GeoJSON.Feature | undefined) => {
+  if (!feature?.properties) {
+    return ''
+  }
+
+  const properties = feature.properties as Record<string, unknown>
+  const nameCandidates = [
+    properties.NAME,
+    properties.NAME_EN,
+    properties.NAME_LONG,
+    properties.ADMIN,
+    properties.name,
+  ]
+
+  for (const candidate of nameCandidates) {
+    if (typeof candidate === 'string' && candidate.trim().length) {
+      return candidate.trim()
+    }
+  }
+
+  return ''
+}
+
 const getStyleForCode = (code: string) => {
   if (code && !isEuropeCode(code)) {
     return mutedStyle
@@ -207,20 +238,16 @@ const getStyleForCode = (code: string) => {
     return selectedStyle
   }
 
+  if (props.reveal && props.targetCode && code === props.targetCode) {
+    return props.selectedCode === props.targetCode ? correctStyle : answerStyle
+  }
+
   if (props.failedCodes.includes(code)) {
     return failedStyle
   }
 
   if (props.partialCodes.includes(code)) {
     return partialStyle
-  }
-
-  if (props.reveal && props.targetCode && code === props.targetCode) {
-    if (props.selectedCode && props.selectedCode !== props.targetCode) {
-      return wrongStyle
-    }
-
-    return correctStyle
   }
 
   return baseStyle
@@ -273,9 +300,25 @@ const applyLayerStyles = () => {
   }
 
   geoLayer.eachLayer((layer) => {
-    const featureLayer = layer as L.Path & { feature?: GeoJSON.Feature }
+    const featureLayer = layer as L.Path & { feature?: GeoJSON.Feature; getTooltip?: () => L.Tooltip | undefined }
     const code = getFeatureCode(featureLayer.feature)
     featureLayer.setStyle(getStyleForCode(code))
+
+    const isFailed = props.failedCodes.includes(code)
+    const hasTooltip = typeof featureLayer.getTooltip === 'function' && !!featureLayer.getTooltip()
+
+    if (isFailed && !hasTooltip) {
+      const featureName = getFeatureName(featureLayer.feature) || code
+      featureLayer.bindTooltip(featureName, {
+        direction: 'top',
+        offset: [0, -6],
+        className: 'map-tooltip',
+      })
+    }
+
+    if (!isFailed && hasTooltip) {
+      featureLayer.unbindTooltip()
+    }
   })
 }
 
@@ -302,7 +345,9 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
         return
       }
 
-      if (props.foundCodes.includes(code) || props.failedCodes.includes(code)) {
+      const isFailed = props.failedCodes.includes(code)
+
+      if (props.foundCodes.includes(code)) {
         return
       }
 
@@ -316,11 +361,20 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
         pathLayer.setStyle(getStyleForCode(code))
       })
 
-      pathLayer.on('click', () => {
-        if (!props.reveal && !props.failedCodes.includes(code)) {
-          emit('country-selected', code)
-        }
-      })
+      if (!isFailed) {
+        pathLayer.on('click', () => {
+          if (!props.reveal) {
+            emit('country-selected', code)
+          }
+        })
+      } else {
+        const featureName = getFeatureName(feature) || code
+        pathLayer.bindTooltip(featureName, {
+          direction: 'top',
+          offset: [0, -6],
+          className: 'map-tooltip',
+        })
+      }
 
       pathLayer.setStyle({ ...pathLayer.options, className: 'leaflet-clickable-countries' })
     },
