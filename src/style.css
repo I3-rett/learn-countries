@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans', 'Trebuchet MS', Verdana, sans-serif;
+    background-color: #f5efe6;
+    background-image:
+      radial-gradient(circle at top left, rgba(255, 180, 138, 0.45), transparent 55%),
+      radial-gradient(circle at 20% 80%, rgba(43, 77, 122, 0.28), transparent 60%),
+      linear-gradient(120deg, rgba(255, 92, 60, 0.15), transparent 40%);
+    color: #0d0f14;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: 'Bebas Neue', Impact, Haettenschweiler, 'Arial Black', sans-serif;
+    letter-spacing: 0.02em;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-ink/10 bg-parchment/90 shadow-[0_18px_50px_rgba(13,15,20,0.12)];
+  }
+
+  .tag {
+    @apply inline-flex items-center gap-2 rounded-full border border-ink/15 bg-white/70 px-3 py-1 text-xs uppercase tracking-[0.25em] text-ink/70;
+  }
+
+  .cta {
+    @apply rounded-full bg-ember px-5 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_12px_24px_rgba(255,92,60,0.35)] transition;
+  }
+
+  .cta:hover {
+    @apply bg-ink;
+  }
+
+  .ghost {
+    @apply rounded-full border border-ink/20 bg-white/70 px-5 py-2 text-sm font-semibold uppercase tracking-wide text-ink transition;
+  }
+
+  .ghost:hover {
+    @apply border-ink/40 bg-white;
+  }
+}
+
+@layer utilities {
+  .leaflet-clickable-countries {
+    cursor: pointer;
+  }
+}
