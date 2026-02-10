@@ -10,12 +10,19 @@ type Props = {
   foundCodes: string[]
   partialCodes: string[]
   failedCodes: string[]
+  actionLabel: string
+  actionDisabled: boolean
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{ (event: 'country-selected', code: string): void }>()
+const emit = defineEmits<{
+  (event: 'country-selected', code: string): void
+  (event: 'confirm-action'): void
+}>()
 
 const mapEl = ref<HTMLDivElement | null>(null)
+const mapCenter = ref<{ lat: number; lng: number } | null>(null)
+const mapZoom = ref<number | null>(null)
 
 let map: L.Map | null = null
 let geoLayer: L.GeoJSON | null = null
@@ -51,7 +58,7 @@ const foundStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.2,
   dashArray: '',
-  fillColor: '#2bb673',
+  fillColor: '#00d26a',
   fillOpacity: 0.35,
 }
 
@@ -91,6 +98,15 @@ const hoverStyle: L.PathOptions = {
   weight: 2,
   dashArray: '',
 }
+
+const tinyCountryQuickSelect = [
+  { code: 'VA', name: 'Vatican City' },
+  { code: 'MC', name: 'Monaco' },
+  { code: 'SM', name: 'San Marino' },
+  { code: 'LI', name: 'Liechtenstein' },
+  { code: 'AD', name: 'Andorra' },
+  { code: 'MT', name: 'Malta' },
+]
 
 const aliasMap: Record<string, string> = {
   UK: 'GB',
@@ -191,12 +207,12 @@ const getStyleForCode = (code: string) => {
     return selectedStyle
   }
 
-  if (props.partialCodes.includes(code)) {
-    return partialStyle
-  }
-
   if (props.failedCodes.includes(code)) {
     return failedStyle
+  }
+
+  if (props.partialCodes.includes(code)) {
+    return partialStyle
   }
 
   if (props.reveal && props.targetCode && code === props.targetCode) {
@@ -208,6 +224,47 @@ const getStyleForCode = (code: string) => {
   }
 
   return baseStyle
+}
+
+const canQuickSelect = (code: string) => {
+  if (props.reveal) {
+    return false
+  }
+
+  if (props.foundCodes.includes(code) || props.failedCodes.includes(code)) {
+    return false
+  }
+
+  return true
+}
+
+const handleQuickSelect = (code: string) => {
+  if (!canQuickSelect(code)) {
+    return
+  }
+
+  emit('country-selected', code)
+}
+
+const handleConfirmAction = () => {
+  if (props.actionDisabled) {
+    return
+  }
+
+  emit('confirm-action')
+}
+
+const updateMapView = () => {
+  if (!map) {
+    return
+  }
+
+  const center = map.getCenter()
+  mapCenter.value = {
+    lat: Number(center.lat.toFixed(4)),
+    lng: Number(center.lng.toFixed(4)),
+  }
+  mapZoom.value = Number(map.getZoom().toFixed(2))
 }
 
 const applyLayerStyles = () => {
@@ -288,7 +345,10 @@ onMounted(async () => {
     scrollWheelZoom: true,
   })
 
-  map.setView([54.0, 12.0], 4.5)
+  map.setView([49.5822, 2.714], 4.5)
+
+  updateMapView()
+  map.on('moveend zoomend', updateMapView)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -316,6 +376,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  map?.off('moveend zoomend', updateMapView)
   map?.remove()
   map = null
   geoLayer = null
@@ -338,11 +399,65 @@ watch(
 
 <template>
   <div class="relative h-[62vh] min-h-[420px] w-full overflow-hidden rounded-3xl border border-ink/10">
-    <div ref="mapEl" class="h-full w-full"></div>
+    <div ref="mapEl" class="relative z-0 h-full w-full"></div>
     <div
-      class="pointer-events-none absolute left-6 top-6 rounded-full bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-ink"
+      class="pointer-events-none absolute left-6 top-6 z-10 rounded-full bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-ink"
     >
       Europe Focus
+    </div>
+    <div class="absolute bottom-4 left-4 z-10 rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">
+        Quick Select
+      </p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button
+          v-for="country in tinyCountryQuickSelect"
+          :key="country.code"
+          type="button"
+          class="rounded-full border border-ink/10 px-3 py-1 text-xs font-semibold text-ink transition"
+          :class="{
+            'bg-white hover:border-ink/30 hover:bg-ink/5': canQuickSelect(country.code),
+            'cursor-not-allowed bg-ink/5 text-ink/40': !canQuickSelect(country.code),
+            'border-emerald-400/60 bg-emerald-100 text-emerald-900': props.foundCodes.includes(country.code),
+            'border-orange-400/60 bg-orange-100 text-orange-900': props.partialCodes.includes(country.code),
+            'border-red-400/60 bg-red-100 text-red-900': props.failedCodes.includes(country.code),
+          }"
+          @click="handleQuickSelect(country.code)"
+        >
+          {{ country.name }}
+        </button>
+      </div>
+    </div>
+    <div
+      class="absolute right-4 top-4 z-10 rounded-2xl border border-ink/10 bg-white/95 p-4 shadow-2xl backdrop-blur"
+      :class="{
+        'ring-2 ring-emerald-300/70': !props.actionDisabled && props.actionLabel === 'Confirm',
+      }"
+    >
+      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Action</p>
+      <p class="mt-1 text-xs text-ink/60">
+        {{ props.actionLabel === 'Confirm' ? 'Confirm your pick' : 'Start next round' }}
+      </p>
+      <button
+        type="button"
+        class="mt-3 h-11 rounded-full border border-ink/10 px-6 text-sm font-semibold text-ink transition"
+        :class="{
+          'bg-ink text-white hover:bg-ink/90': !props.actionDisabled,
+          'cursor-not-allowed bg-ink/5 text-ink/40': props.actionDisabled,
+        }"
+        :disabled="props.actionDisabled"
+        @click="handleConfirmAction"
+      >
+        {{ props.actionLabel }}
+      </button>
+    </div>
+    <div
+      v-if="mapCenter && mapZoom !== null"
+      class="absolute bottom-4 right-4 z-10 rounded-2xl bg-white/70 px-4 py-3 text-xs text-ink shadow-md backdrop-blur-sm"
+    >
+      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Map View</p>
+      <p class="mt-1 select-text font-mono">Center: [{{ mapCenter.lat }}, {{ mapCenter.lng }}]</p>
+      <p class="select-text font-mono">Zoom: {{ mapZoom }}</p>
     </div>
   </div>
 </template>

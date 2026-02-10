@@ -22,17 +22,46 @@ type ApiCountry = {
 }
 
 const API_URL = 'https://restcountries.com/v3.1/alpha'
+const SECONDARY_API_URL = 'https://restcountries.com/v2/alpha'
+const REQUEST_TIMEOUT_MS = 12000
+const CACHE_KEY = 'learn-countries:europe-cache-v1'
 
-export async function fetchEuropeCountries(): Promise<Record<EuropeCode, CountryInfo>> {
-  const codes = EUROPE_CODES.join(',')
-  const url = `${API_URL}?codes=${codes}&fields=name,translations,capital,cca2,region,subregion,flags`
-  const response = await fetch(url)
+type ApiCountryV2 = {
+  alpha2Code: string
+  name?: string
+  translations?: { fr?: string }
+  capital?: string
+  region?: string
+  subregion?: string
+  flag?: string
+}
 
-  if (!response.ok) {
-    throw new Error('Failed to load country data.')
+const readCache = () => {
+  if (typeof window === 'undefined') {
+    return null
   }
 
-  const payload = (await response.json()) as ApiCountry[]
+  const raw = window.localStorage.getItem(CACHE_KEY)
+  if (!raw) {
+    return null
+  }
+
+  try {
+    return JSON.parse(raw) as Record<EuropeCode, CountryInfo>
+  } catch {
+    return null
+  }
+}
+
+const writeCache = (data: Record<EuropeCode, CountryInfo>) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+}
+
+const mapV3Countries = (payload: ApiCountry[]) => {
   const countryMap = {} as Record<EuropeCode, CountryInfo>
 
   for (const country of payload) {
@@ -55,4 +84,91 @@ export async function fetchEuropeCountries(): Promise<Record<EuropeCode, Country
   }
 
   return countryMap
+}
+
+const mapV2Countries = (payload: ApiCountryV2[]) => {
+  const countryMap = {} as Record<EuropeCode, CountryInfo>
+
+  for (const country of payload) {
+    const code = country.alpha2Code?.toUpperCase() as EuropeCode
+
+    if (!code || !EUROPE_CODES.includes(code)) {
+      continue
+    }
+
+    countryMap[code] = {
+      code,
+      name: country.name ?? code,
+      frenchName: country.translations?.fr,
+      capital: country.capital ?? 'Unknown',
+      region: country.region,
+      subregion: country.subregion,
+      flagUrl: country.flag,
+      flagAlt: country.name ? `Flag of ${country.name}` : undefined,
+    }
+  }
+
+  return countryMap
+}
+
+const fetchWithTimeout = async (url: string) => {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+export async function fetchEuropeCountries(): Promise<Record<EuropeCode, CountryInfo>> {
+  const codes = EUROPE_CODES.join(',')
+  const url = `${API_URL}?codes=${codes}&fields=name,translations,capital,cca2,region,subregion,flags`
+  const secondaryUrl = `${SECONDARY_API_URL}?codes=${codes}&fields=name;translations;capital;alpha2Code;region;subregion;flag`
+
+  try {
+    const response = await fetchWithTimeout(url)
+
+    if (!response.ok) {
+      throw new Error('Failed to load country data.')
+    }
+
+    const payload = (await response.json()) as ApiCountry[]
+    const mapped = mapV3Countries(payload)
+    writeCache(mapped)
+    return mapped
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.warn('Primary country data request timed out.')
+    } else {
+      console.warn('Primary country data request failed.', error)
+    }
+  }
+
+  try {
+    const response = await fetchWithTimeout(secondaryUrl)
+
+    if (!response.ok) {
+      throw new Error('Failed to load country data.')
+    }
+
+    const payload = (await response.json()) as ApiCountryV2[]
+    const mapped = mapV2Countries(payload)
+    writeCache(mapped)
+    return mapped
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.warn('Secondary country data request timed out.')
+    } else {
+      console.warn('Secondary country data request failed.', error)
+    }
+  }
+
+  const cached = readCache()
+  if (cached) {
+    return cached
+  }
+
+  throw new Error('Failed to load country data.')
 }

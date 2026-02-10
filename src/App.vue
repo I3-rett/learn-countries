@@ -14,7 +14,7 @@ const selectedCode = ref<string | null>(null)
 const reveal = ref(false)
 const isCorrect = ref<boolean | null>(null)
 const correctCount = ref(0)
-const totalCount = ref(0)
+const totalCount = computed(() => Object.keys(countries.value).length * 2)
 const foundCodes = ref(new Set<string>())
 const failedCodes = ref(new Set<string>())
 const stage = ref<Stage>('name')
@@ -87,14 +87,6 @@ const answerSummary = computed(() => {
   return `The correct answer was ${targetCountry.value.name}.`
 })
 
-const answerDetail = computed(() => {
-  if (!reveal.value || !targetCountry.value) {
-    return 'We will show the capital and region after each guess.'
-  }
-
-  const regionLabel = targetCountry.value.subregion || targetCountry.value.region || 'Europe'
-  return `Capital: ${targetCountry.value.capital} · Region: ${regionLabel}`
-})
 
 const foundCodesList = computed(() => Array.from(foundCodes.value))
 const failedCodesList = computed(() => Array.from(failedCodes.value))
@@ -169,19 +161,22 @@ const confirmGuess = () => {
 
   reveal.value = true
   isCorrect.value = selectedCode.value === targetCode.value
-  totalCount.value += 1
-
   if (isCorrect.value) {
     const progress = getProgress(targetCode.value)
 
     if (stage.value === 'name') {
-      progress.name = true
+      if (!progress.name) {
+        progress.name = true
+        correctCount.value += 1
+      }
     } else {
-      progress.flag = true
+      if (!progress.flag) {
+        progress.flag = true
+        correctCount.value += 1
+      }
     }
 
     if (progress.name && progress.flag) {
-      correctCount.value += 1
       foundCodes.value.add(targetCode.value)
     }
   } else {
@@ -211,11 +206,6 @@ const actionDisabled = computed(() => {
   return !selectedCode.value
 })
 
-const resetRound = () => {
-  selectedCode.value = null
-  reveal.value = false
-  isCorrect.value = null
-}
 
 onMounted(async () => {
   try {
@@ -242,20 +232,11 @@ onMounted(async () => {
       </div>
       <div class="panel flex min-w-[260px] flex-col gap-3 px-6 py-4">
         <p class="text-xs uppercase tracking-[0.3em] text-ink/60">Round Status</p>
-        <div class="flex items-center justify-between gap-3">
-          <button
-            class="ghost h-12 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40"
-            @click="reveal ? advanceRound() : confirmGuess()"
-            :disabled="actionDisabled"
-          >
-            {{ actionLabel }}
-          </button>
-          <div
-            class="flex h-12 items-center rounded-2xl px-4 text-center text-lg font-semibold"
-            :class="statusTone"
-          >
-            {{ statusLabel }}
-          </div>
+        <div
+          class="flex h-12 items-center rounded-2xl px-4 text-center text-lg font-semibold"
+          :class="statusTone"
+        >
+          {{ statusLabel }}
         </div>
         <p class="text-sm font-semibold text-ink/70">Score: {{ correctCount }}/{{ totalCount }}</p>
         <p class="text-sm text-ink/70">{{ hintLabel }}</p>
@@ -271,7 +252,10 @@ onMounted(async () => {
           :found-codes="foundCodesList"
           :partial-codes="partialCodesList"
           :failed-codes="failedCodesList"
+          :action-label="actionLabel"
+          :action-disabled="actionDisabled"
           @country-selected="handleGuess"
+          @confirm-action="reveal ? advanceRound() : confirmGuess()"
         />
       </section>
 
