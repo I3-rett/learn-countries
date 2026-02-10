@@ -8,6 +8,8 @@ type Props = {
   selectedCode: string | null
   reveal: boolean
   foundCodes: string[]
+  partialCodes: string[]
+  failedCodes: string[]
 }
 
 const props = defineProps<Props>()
@@ -24,6 +26,7 @@ const GEOJSON_URL =
 const baseStyle: L.PathOptions = {
   color: '#1a1f2b',
   weight: 1,
+  dashArray: '',
   fillColor: '#f5efe6',
   fillOpacity: 0.85,
 }
@@ -31,6 +34,7 @@ const baseStyle: L.PathOptions = {
 const mutedStyle: L.PathOptions = {
   color: '#1a1f2b',
   weight: 0.6,
+  dashArray: '',
   fillColor: '#f5efe6',
   fillOpacity: 0.2,
 }
@@ -38,34 +42,54 @@ const mutedStyle: L.PathOptions = {
 const correctStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.6,
+  dashArray: '',
   fillColor: '#2bb673',
-  fillOpacity: 0.9,
+  fillOpacity: 0.98,
 }
 
 const foundStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.2,
+  dashArray: '',
   fillColor: '#2bb673',
   fillOpacity: 0.35,
+}
+
+const partialStyle: L.PathOptions = {
+  color: '#0d0f14',
+  weight: 1.2,
+  dashArray: '',
+  fillColor: '#2bb673',
+  fillOpacity: 0.25,
 }
 
 const wrongStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.6,
+  dashArray: '',
   fillColor: '#ff5c3c',
   fillOpacity: 0.9,
 }
 
+const failedStyle: L.PathOptions = {
+  color: '#0d0f14',
+  weight: 1.2,
+  dashArray: '',
+  fillColor: '#ff5c3c',
+  fillOpacity: 0.5,
+}
+
 const selectedStyle: L.PathOptions = {
   color: '#0d0f14',
-  weight: 2,
-  fillColor: '#ffb48a',
-  fillOpacity: 0.9,
+  weight: 2.4,
+  dashArray: '6 4',
+  fillColor: '#f5efe6',
+  fillOpacity: 0.85,
 }
 
 const hoverStyle: L.PathOptions = {
   weight: 2,
-  fillOpacity: 0.95,
+  dashArray: '',
 }
 
 const aliasMap: Record<string, string> = {
@@ -155,16 +179,32 @@ const getStyleForCode = (code: string) => {
     return foundStyle
   }
 
-  if (props.reveal && props.targetCode && code === props.targetCode) {
-    return correctStyle
-  }
-
-  if (props.reveal && props.selectedCode && code === props.selectedCode) {
-    return wrongStyle
-  }
-
   if (!props.reveal && props.selectedCode && code === props.selectedCode) {
+    if (props.partialCodes.includes(code)) {
+      return {
+        ...selectedStyle,
+        fillColor: partialStyle.fillColor,
+        fillOpacity: partialStyle.fillOpacity,
+      }
+    }
+
     return selectedStyle
+  }
+
+  if (props.partialCodes.includes(code)) {
+    return partialStyle
+  }
+
+  if (props.failedCodes.includes(code)) {
+    return failedStyle
+  }
+
+  if (props.reveal && props.targetCode && code === props.targetCode) {
+    if (props.selectedCode && props.selectedCode !== props.targetCode) {
+      return wrongStyle
+    }
+
+    return correctStyle
   }
 
   return baseStyle
@@ -205,7 +245,7 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
         return
       }
 
-      if (props.foundCodes.includes(code)) {
+      if (props.foundCodes.includes(code) || props.failedCodes.includes(code)) {
         return
       }
 
@@ -220,7 +260,7 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
       })
 
       pathLayer.on('click', () => {
-        if (!props.reveal) {
+        if (!props.reveal && !props.failedCodes.includes(code)) {
           emit('country-selected', code)
         }
       })
@@ -282,7 +322,14 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [props.reveal, props.selectedCode, props.targetCode, props.foundCodes],
+  () => [
+    props.reveal,
+    props.selectedCode,
+    props.targetCode,
+    props.foundCodes,
+    props.partialCodes,
+    props.failedCodes,
+  ],
   () => {
     applyLayerStyles()
   }

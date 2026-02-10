@@ -7,6 +7,8 @@ const loading = ref(true)
 const errorMessage = ref('')
 const countries = ref<Record<string, CountryInfo>>({})
 
+type Stage = 'name' | 'flag'
+
 const targetCode = ref<string | null>(null)
 const selectedCode = ref<string | null>(null)
 const reveal = ref(false)
@@ -15,12 +17,18 @@ const correctCount = ref(0)
 const totalCount = ref(0)
 const foundCodes = ref(new Set<string>())
 const failedCodes = ref(new Set<string>())
+const stage = ref<Stage>('name')
+const progressByCode = ref<Record<string, { name: boolean; flag: boolean }>>({})
 
 const targetCountry = computed(() =>
   targetCode.value ? countries.value[targetCode.value] : undefined
 )
 const selectedCountry = computed(() =>
   selectedCode.value ? countries.value[selectedCode.value] : undefined
+)
+const isFlagStage = computed(() => stage.value === 'flag')
+const targetTitle = computed(() =>
+  isFlagStage.value ? 'Which country is this flag?' : promptLabel.value
 )
 
 const statusLabel = computed(() => {
@@ -68,9 +76,15 @@ const answerSummary = computed(() => {
     return 'Pick a country to reveal its details.'
   }
 
-  return isCorrect.value
-    ? `You found ${targetCountry.value.name}.`
-    : `The correct answer was ${targetCountry.value.name}.`
+  if (isCorrect.value) {
+    const progress = targetCode.value ? progressByCode.value[targetCode.value] : undefined
+    const completed = !!progress?.name && !!progress?.flag
+    return completed
+      ? `You completed ${targetCountry.value.name}.`
+      : `Correct. Now find the ${stage.value === 'flag' ? 'country name' : 'flag'}.`
+  }
+
+  return `The correct answer was ${targetCountry.value.name}.`
 })
 
 const answerDetail = computed(() => {
@@ -83,6 +97,44 @@ const answerDetail = computed(() => {
 })
 
 const foundCodesList = computed(() => Array.from(foundCodes.value))
+const failedCodesList = computed(() => Array.from(failedCodes.value))
+const partialCodesList = computed(() =>
+  Object.entries(progressByCode.value)
+    .filter(([, progress]) => progress.name !== progress.flag)
+    .map(([code]) => code)
+)
+
+const getProgress = (code: string) => {
+  if (!progressByCode.value[code]) {
+    progressByCode.value[code] = { name: false, flag: false }
+  }
+
+  return progressByCode.value[code]
+}
+
+const getInitialStage = (code: string): Stage => {
+  const hasFlag = !!countries.value[code]?.flagUrl
+
+  if (!hasFlag) {
+    return 'name'
+  }
+
+  return Math.random() < 0.5 ? 'name' : 'flag'
+}
+
+const getStageForCode = (code: string): Stage => {
+  const progress = getProgress(code)
+
+  if (progress.name && !progress.flag) {
+    return 'flag'
+  }
+
+  if (progress.flag && !progress.name) {
+    return 'name'
+  }
+
+  return getInitialStage(code)
+}
 
 const pickNewTarget = () => {
   const availableCodes = Object.keys(countries.value).filter(
@@ -94,10 +146,12 @@ const pickNewTarget = () => {
   }
 
   const nextIndex = Math.floor(Math.random() * availableCodes.length)
-  targetCode.value = availableCodes[nextIndex] ?? null
+  const nextCode = availableCodes[nextIndex] ?? null
+  targetCode.value = nextCode
   selectedCode.value = null
   reveal.value = false
   isCorrect.value = null
+  stage.value = nextCode ? getStageForCode(nextCode) : 'name'
 }
 
 const handleGuess = (code: string) => {
@@ -118,14 +172,29 @@ const confirmGuess = () => {
   totalCount.value += 1
 
   if (isCorrect.value) {
-    correctCount.value += 1
-    foundCodes.value.add(targetCode.value)
+    const progress = getProgress(targetCode.value)
+
+    if (stage.value === 'name') {
+      progress.name = true
+    } else {
+      progress.flag = true
+    }
+
+    if (progress.name && progress.flag) {
+      correctCount.value += 1
+      foundCodes.value.add(targetCode.value)
+    }
   } else {
     failedCodes.value.add(targetCode.value)
   }
 }
 
 const advanceRound = () => {
+  if (!targetCode.value) {
+    pickNewTarget()
+    return
+  }
+
   pickNewTarget()
 }
 
@@ -200,34 +269,56 @@ onMounted(async () => {
           :selected-code="selectedCode"
           :reveal="reveal"
           :found-codes="foundCodesList"
+          :partial-codes="partialCodesList"
+          :failed-codes="failedCodesList"
           @country-selected="handleGuess"
         />
       </section>
 
-      <section class="flex h-full flex-col gap-6">
+      <section class="flex h-full min-h-0 flex-col gap-6">
         <div class="panel p-6">
-          <p class="text-xs uppercase tracking-[0.3em] text-ink/60">Target</p>
-          <h2 class="mt-3 text-4xl text-ink">{{ promptLabel }}</h2>
-          <p v-if="targetCountry?.frenchName" class="mt-2 text-lg text-ink/60">
-            {{ targetCountry.frenchName }}
+          <p class="text-xs uppercase tracking-[0.3em] text-ink/60">
+            {{ reveal ? 'Answer' : 'Target' }}
           </p>
-          <p class="mt-3 text-base text-ink/70">
-            Click the country that matches the prompt, then confirm your choice.
-          </p>
-        </div>
-
-        <div class="panel flex flex-1 flex-col p-8 md:p-9">
-          <p class="text-xs uppercase tracking-[0.3em] text-ink/60">Answer</p>
-          <div class="mt-4 flex flex-col gap-6 md:flex-row md:items-stretch md:justify-between">
+          <div v-if="!reveal">
+            <h2 class="mt-3 text-4xl text-ink">{{ targetTitle }}</h2>
+            <p v-if="!isFlagStage && targetCountry?.frenchName" class="mt-2 text-lg text-ink/60">
+              {{ targetCountry.frenchName }}
+            </p>
+            <div
+              v-if="isFlagStage"
+              class="mt-4 flex min-h-[140px] items-center justify-center rounded-2xl border border-ink/10 bg-white/70"
+            >
+              <img
+                v-if="targetCountry?.flagUrl"
+                :src="targetCountry.flagUrl"
+                :alt="targetCountry.flagAlt || `Flag of ${targetCountry.name}`"
+                class="h-full w-full rounded-2xl object-cover"
+                loading="lazy"
+              />
+              <span v-else class="text-xs uppercase tracking-[0.3em] text-ink/40">Flag</span>
+            </div>
+            <p class="mt-3 text-base text-ink/70">
+              Click the country that matches the prompt, then confirm your choice.
+            </p>
+          </div>
+          <div
+            v-else
+            class="mt-3 flex flex-col gap-6 rounded-2xl border border-ink/10 p-4 md:flex-row md:items-stretch md:justify-between"
+            :class="{
+              'border-2 border-jade/70 bg-jade/10': isCorrect === true,
+              'border-2 border-ember/70 bg-ember/10': isCorrect === false,
+            }"
+          >
             <div class="md:w-1/2">
               <p class="text-xl text-ink md:text-2xl">{{ answerSummary }}</p>
               <p
-                v-if="reveal && isCorrect === false && selectedCountry"
+                v-if="isCorrect === false && selectedCountry"
                 class="mt-2 text-sm text-ink/70 md:text-base"
               >
                 Your guess: <span class="font-semibold text-ink">{{ selectedCountry.name }}</span>
               </p>
-              <p v-if="reveal" class="mt-2 text-sm text-ink/70 md:text-base">
+              <p class="mt-2 text-sm text-ink/70 md:text-base">
                 <span class="font-semibold text-ink">Capital:</span>
                 <span class="font-semibold text-ink"> {{ targetCountry?.capital || 'Unknown' }}</span>
                 <span class="text-ink/60">
@@ -237,7 +328,6 @@ onMounted(async () => {
               </p>
             </div>
             <div
-              v-if="reveal"
               class="flex min-h-[150px] w-full items-center justify-center rounded-2xl border border-ink/10 bg-white/70 md:w-1/2"
             >
               <img

@@ -14,8 +14,7 @@
     background-color: #f5efe6;
     background-image:
       radial-gradient(circle at top left, rgba(255, 180, 138, 0.45), transparent 55%),
-      radial-gradient(circle at 20% 80%, rgba(43, 77, 122, 0.28), transparent 60%),
-      linear-gradient(120deg, rgba(255, 92, 60, 0.15), transparent 40%);
+      radial-gradient(circle at 20% 80%, rgba(43, 77, 122, 0.28), transparent 60%);
     color: #0d0f14;
     min-height: 100vh;
   }
