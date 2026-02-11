@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import EuropeMap from './components/EuropeMap.vue'
 import { fetchEuropeCountries, type CountryInfo } from './services/countryApi'
 
@@ -232,8 +232,43 @@ const actionDisabled = computed(() => {
   return !selectedCode.value
 })
 
+const handlePrimaryAction = () => {
+  if (actionDisabled.value) {
+    return
+  }
+
+  if (reveal.value) {
+    advanceRound()
+  } else {
+    confirmGuess()
+  }
+}
+
+const shouldIgnoreSpace = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return !!target.closest('input, textarea, select, [contenteditable="true"]')
+}
+
+const handleSpaceKey = (event: KeyboardEvent) => {
+  if (event.code !== 'Space' && event.key !== ' ') {
+    return
+  }
+
+  if (shouldIgnoreSpace(event.target)) {
+    return
+  }
+
+  event.preventDefault()
+  handlePrimaryAction()
+}
+
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleSpaceKey)
+
   try {
     countries.value = await fetchEuropeCountries()
     pickNewTarget()
@@ -242,6 +277,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleSpaceKey)
 })
 </script>
 
@@ -281,7 +320,7 @@ onMounted(async () => {
           :action-label="actionLabel"
           :action-disabled="actionDisabled"
           @country-selected="handleGuess"
-          @confirm-action="reveal ? advanceRound() : confirmGuess()"
+          @confirm-action="handlePrimaryAction"
         />
       </section>
 
