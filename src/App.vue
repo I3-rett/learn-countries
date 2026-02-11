@@ -81,12 +81,38 @@ const answerSummary = computed(() => {
     const completed = !!progress?.name && !!progress?.flag
     return completed
       ? `You completed ${targetCountry.value.name}.`
-      : `Correct. Now find the ${stage.value === 'flag' ? 'country name' : 'flag'}.`
+      : `Correct!`
   }
 
   return `The correct answer was ${targetCountry.value.name}.`
 })
 
+const PLONKIT_OVERRIDES: Record<string, string> = {
+  BA: 'bosnia-and-herzegovina',
+  CZ: 'czechia',
+  GB: 'united-kingdom',
+  MK: 'north-macedonia',
+  VA: 'vatican-city',
+  XK: 'kosovo',
+}
+
+const toPlonkitSlug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/['.]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+const plonkitUrl = computed(() => {
+  if (!targetCountry.value || !targetCode.value) {
+    return ''
+  }
+
+  const override = PLONKIT_OVERRIDES[targetCode.value]
+  const slug = override ?? toPlonkitSlug(targetCountry.value.name)
+  return `https://www.plonkit.net/${slug}`
+})
 
 const foundCodesList = computed(() => Array.from(foundCodes.value))
 const failedCodesList = computed(() => Array.from(failedCodes.value))
@@ -302,14 +328,35 @@ onMounted(async () => {
               >
                 Your guess: <span class="font-semibold text-ink">{{ selectedCountry.name }}</span>
               </p>
-              <p class="mt-2 text-sm text-ink/70 md:text-base">
-                <span class="font-semibold text-ink">Capital:</span>
-                <span class="font-semibold text-ink"> {{ targetCountry?.capital || 'Unknown' }}</span>
-                <span class="text-ink/60">
-                  · Region:
-                  {{ targetCountry?.subregion || targetCountry?.region || 'Europe' }}
-                </span>
-              </p>
+              <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl border border-ink/10 bg-white/80 px-4 py-3">
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.3em] text-ink/50">
+                    Capital City
+                  </p>
+                  <p class="mt-2 text-xl font-semibold text-ink md:text-2xl">
+                    {{ targetCountry?.capital || 'Unknown' }}
+                  </p>
+                </div>
+                <div class="rounded-2xl border border-ink/10 bg-white/70 px-4 py-3">
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.3em] text-ink/50">
+                    Region
+                  </p>
+                  <p class="mt-2 text-sm font-semibold text-ink md:text-base">
+                    {{ targetCountry?.subregion || targetCountry?.region || 'Europe' }}
+                  </p>
+                </div>
+              </div>
+              <div class="mt-4">
+                <a
+                  v-if="plonkitUrl"
+                  :href="plonkitUrl"
+                  class="inline-flex items-center gap-2 rounded-full border border-ink/15 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-ink/70 transition hover:border-ink/30 hover:text-ink"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Plonk It guide
+                </a>
+              </div>
             </div>
             <div
               class="flex min-h-[150px] w-full items-center justify-center rounded-2xl border border-ink/10 bg-white/70 md:w-1/2"
