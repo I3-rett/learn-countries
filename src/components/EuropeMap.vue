@@ -78,14 +78,6 @@ const partialStyle: L.PathOptions = {
   fillOpacity: 0.25,
 }
 
-const wrongStyle: L.PathOptions = {
-  color: '#0d0f14',
-  weight: 1.6,
-  dashArray: '',
-  fillColor: '#ff5c3c',
-  fillOpacity: 0.9,
-}
-
 const failedStyle: L.PathOptions = {
   color: '#0d0f14',
   weight: 1.2,
