@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import EuropeMap from '../EuropeMap.vue'
+import ContinentMap from '../ContinentMap.vue'
 import { createCapitalLayer } from '../../services/capitalMarkers'
 
 const createdLayers: Array<{
@@ -100,6 +100,14 @@ const baseProps = {
   failedCodes: [],
   capitalPoints: [],
   stage: 'name' as const,
+  availableCodes: ['FR'],
+  quickSelectCountries: [{ code: 'VA', name: 'Vatican City' }],
+  mapView: {
+    center: [49.5822, 2.714] as [number, number],
+    zoom: 4.5,
+    minZoom: 4,
+    maxZoom: 10,
+  },
   uiState: {
     actionLabel: 'Confirm',
     actionDisabled: false,
@@ -126,7 +134,7 @@ const makeFetchResponse = (payload: GeoJSON.FeatureCollection) =>
     json: async () => payload,
   }) as Promise<Response>
 
-describe('EuropeMap', () => {
+describe('ContinentMap', () => {
   beforeEach(() => {
     createdLayers.length = 0
 
@@ -150,7 +158,7 @@ describe('EuropeMap', () => {
   })
 
   it('emits country-selected when a map feature is clicked', async () => {
-    const wrapper = mount(EuropeMap, {
+    const wrapper = mount(ContinentMap, {
       props: baseProps,
       global: { stubs: { MapOverlay: true } },
     })
@@ -169,7 +177,7 @@ describe('EuropeMap', () => {
   })
 
   it('ignores country clicks during the capital stage', async () => {
-    const wrapper = mount(EuropeMap, {
+    const wrapper = mount(ContinentMap, {
       props: { ...baseProps, stage: 'capital' as const },
       global: { stubs: { MapOverlay: true } },
     })
@@ -194,7 +202,7 @@ describe('EuropeMap', () => {
       dispose: vi.fn(),
     })
 
-    const wrapper = mount(EuropeMap, {
+    const wrapper = mount(ContinentMap, {
       props: baseProps,
       global: { stubs: { MapOverlay: true } },
     })

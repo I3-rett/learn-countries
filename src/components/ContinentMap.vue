@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
-import { EUROPE_CODES } from '../data/europe'
+import type { QuickSelectCountry } from '../data/continents'
 import MapOverlay from './MapOverlay.vue'
 import { createCapitalLayer } from '../services/capitalMarkers'
 
@@ -16,6 +16,14 @@ type Props = {
   failedCodes: string[]
   capitalPoints: Array<{ code: string; name: string; lat: number; lng: number }>
   stage: Stage
+  availableCodes: readonly string[]
+  quickSelectCountries: readonly QuickSelectCountry[]
+  mapView?: {
+    center: [number, number]
+    zoom: number
+    minZoom?: number
+    maxZoom?: number
+  }
   uiState: {
     actionLabel: string
     actionDisabled: boolean
@@ -182,23 +190,14 @@ const capitalFailedStyle: L.CircleMarkerOptions = {
   className: 'capital-marker',
 }
 
-const tinyCountryQuickSelect = [
-  { code: 'VA', name: 'Vatican City' },
-  { code: 'MC', name: 'Monaco' },
-  { code: 'SM', name: 'San Marino' },
-  { code: 'LI', name: 'Liechtenstein' },
-  { code: 'AD', name: 'Andorra' },
-  { code: 'MT', name: 'Malta' },
-]
-
 const aliasMap: Record<string, string> = {
   UK: 'GB',
   EL: 'GR',
   FX: 'FR',
 }
 
-const europeSet = new Set(EUROPE_CODES)
-const isEuropeCode = (code: string) => europeSet.has(code as (typeof EUROPE_CODES)[number])
+const allowedSet = computed(() => new Set(props.availableCodes))
+const isAllowedCode = (code: string) => allowedSet.value.has(code)
 
 const normalizeCode = (value: string) => {
   const upperCode = value.toUpperCase()
@@ -223,7 +222,7 @@ const pickCodeFromProperties = (properties: Record<string, unknown> | undefined)
 
     const normalized = normalizeCode(trimmed)
 
-    if (isEuropeCode(normalized)) {
+    if (isAllowedCode(normalized)) {
       return normalized
     }
   }
@@ -293,7 +292,7 @@ const getFeatureName = (feature: GeoJSON.Feature | undefined) => {
 }
 
 const getStyleForCode = (code: string) => {
-  if (code && !isEuropeCode(code)) {
+  if (code && !isAllowedCode(code)) {
     return mutedStyle
   }
 
@@ -365,7 +364,7 @@ const handleResetGame = () => {
 }
 
 const quickSelectItems = computed(() =>
-  tinyCountryQuickSelect.map((country) => {
+  props.quickSelectCountries.map((country) => {
     const disabled = !canQuickSelect(country.code)
     let tone: 'default' | 'found' | 'partial' | 'failed' = 'default'
 
@@ -466,17 +465,17 @@ const ensureCapitalLayer = () => {
 }
 
 const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
-  const europeFeatures = geojson.features.filter((feature) => {
+  const allowedFeatures = geojson.features.filter((feature) => {
     const code = getFeatureCode(feature)
-    return EUROPE_CODES.includes(code as (typeof EUROPE_CODES)[number])
+    return isAllowedCode(code)
   })
 
-  const allowAnyClick = !europeFeatures.length
-  const featuresToShow = europeFeatures.length ? europeFeatures : geojson.features
+  const allowAnyClick = !allowedFeatures.length
+  const featuresToShow = allowedFeatures.length ? allowedFeatures : geojson.features
 
   console.info('Map feature stats', {
     total: geojson.features.length,
-    europe: europeFeatures.length,
+    europe: allowedFeatures.length,
   })
 
   geoLayer = L.geoJSON(featuresToShow, {
@@ -484,7 +483,7 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
     onEachFeature: (feature, layer) => {
       const code = getFeatureCode(feature)
 
-      if (!code || (!allowAnyClick && !isEuropeCode(code))) {
+      if (!code || (!allowAnyClick && !isAllowedCode(code))) {
         return
       }
 
@@ -525,7 +524,7 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
 
   geoLayer.addTo(map as L.Map)
 
-  if (europeFeatures.length) {
+  if (allowedFeatures.length) {
     map?.fitBounds(geoLayer.getBounds(), { padding: [24, 24] })
   }
 }
@@ -535,10 +534,17 @@ onMounted(async () => {
     return
   }
 
-  map = L.map(mapEl.value, {
-    zoomControl: false,
+  const view = props.mapView ?? {
+    center: [49.5822, 2.714] as [number, number],
+    zoom: 4.5,
     minZoom: 4,
     maxZoom: 10,
+  }
+
+  map = L.map(mapEl.value, {
+    zoomControl: false,
+    minZoom: view.minZoom ?? 4,
+    maxZoom: view.maxZoom ?? 10,
     scrollWheelZoom: true,
   })
 
@@ -547,7 +553,7 @@ onMounted(async () => {
 
   ensureCapitalLayer()
 
-  map.setView([49.5822, 2.714], 4.5)
+  map.setView(view.center, view.zoom)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -592,6 +598,7 @@ watch(
     props.failedCodes,
     props.stage,
     props.uiState.capitalsEnabled,
+    props.availableCodes,
   ],
   () => {
     applyLayerStyles()

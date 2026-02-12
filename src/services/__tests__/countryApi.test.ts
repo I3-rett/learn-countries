@@ -1,7 +1,7 @@
 import { HttpResponse, http } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { server } from '../../tests/msw/server'
-import { fetchEuropeCountries } from '../countryApi'
+import { fetchCountries, fetchEuropeCountries } from '../countryApi'
 
 const API_URL = 'https://restcountries.com/v3.1/alpha'
 const SECONDARY_API_URL = 'https://restcountries.com/v2/alpha'
@@ -43,9 +43,11 @@ describe('countryApi', () => {
     )
 
     const data = await fetchEuropeCountries()
-    expect(data.FR.name).toBe('France')
-    expect(data.FR.capital).toBe('Paris')
-    expect(data.FR.capitalLatLng?.lat).toBe(48.8566)
+    expect(data.FR).toBeTruthy()
+    const france = data.FR!
+    expect(france.name).toBe('France')
+    expect(france.capital).toBe('Paris')
+    expect(france.capitalLatLng?.lat).toBe(48.8566)
   })
 
   it('falls back to v2 API when v3 fails', async () => {
@@ -55,7 +57,8 @@ describe('countryApi', () => {
     )
 
     const data = await fetchEuropeCountries()
-    expect(data.FR.flagUrl).toContain('fr.png')
+    expect(data.FR).toBeTruthy()
+    expect(data.FR!.flagUrl).toContain('fr.png')
   })
 
   it('uses cached data when all requests fail', async () => {
@@ -76,7 +79,8 @@ describe('countryApi', () => {
     )
 
     const data = await fetchEuropeCountries()
-    expect(data.FR.name).toBe('France')
+    expect(data.FR).toBeTruthy()
+    expect(data.FR!.name).toBe('France')
   })
 
   it('filters non-european codes and tolerates missing capital data', async () => {
@@ -96,7 +100,8 @@ describe('countryApi', () => {
 
     const data = await fetchEuropeCountries()
     expect('US' in data).toBe(false)
-    expect(data.FR.capitalLatLng).toBeUndefined()
+    expect(data.FR).toBeTruthy()
+    expect(data.FR!.capitalLatLng).toBeUndefined()
   })
 
   it('writes mapped data to the cache on success', async () => {
@@ -109,5 +114,24 @@ describe('countryApi', () => {
     const cached = localStorage.getItem('learn-countries:europe-cache-v2')
     expect(cached).toBeTruthy()
     expect(cached).toContain('France')
+  })
+
+  it('supports custom code lists and cache keys', async () => {
+    const customCacheKey = 'learn-countries:custom-cache'
+
+    server.use(
+      http.get(API_URL, () => HttpResponse.json([
+        {
+          cca2: 'US',
+          name: { common: 'United States' },
+          capital: ['Washington, D.C.'],
+        },
+      ]))
+    )
+
+    const data = await fetchCountries(['US'], customCacheKey)
+    expect(data.US).toBeTruthy()
+    expect(data.US!.name).toBe('United States')
+    expect(localStorage.getItem(customCacheKey)).toContain('United States')
   })
 })

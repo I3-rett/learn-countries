@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import EuropeMap from './components/EuropeMap.vue'
+import { computed, ref } from 'vue'
+import ContinentMap from './components/ContinentMap.vue'
+import { CONTINENTS, EUROPE_CONTINENT } from './data/continents'
 import { useGameState } from './composables/useGameState'
+
+const continents = CONTINENTS
+const selectedContinentId = ref(continents[0]?.id ?? EUROPE_CONTINENT.id)
+const continent = computed(
+  () => continents.find((entry) => entry.id === selectedContinentId.value) ?? EUROPE_CONTINENT
+)
 
 const {
   actionDisabled,
@@ -36,7 +43,7 @@ const {
   targetCountry,
   targetTitle,
   selectedCode,
-} = useGameState()
+} = useGameState({ continent })
 
 const mapUiState = computed(() => ({
   actionLabel: actionLabel.value,
@@ -62,7 +69,22 @@ const mapUiState = computed(() => ({
   <div class="min-h-screen px-6 py-8 lg:px-10">
     <header class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
       <div class="max-w-2xl">
-        <span class="tag">Europe Edition</span>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="entry in continents"
+            :key="entry.id"
+            type="button"
+            class="tag border border-transparent transition"
+            :class="
+              entry.id === continent.id
+                ? 'border-ink/20 bg-ink text-white'
+                : 'border-ink/15 bg-white text-ink/70 hover:border-ink/30'
+            "
+            @click="selectedContinentId = entry.id"
+          >
+            {{ entry.label }}
+          </button>
+        </div>
         <h1 class="mt-4 text-5xl text-ink md:text-6xl">Map Mentor</h1>
         <p class="mt-4 text-base text-ink/70 md:text-lg">
           Find the highlighted country by clicking its outline. Each round reveals the
@@ -73,7 +95,7 @@ const mapUiState = computed(() => ({
 
     <main class="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
       <section class="panel h-full p-5 md:p-6">
-        <EuropeMap
+        <ContinentMap
           :target-code="targetCode"
           :selected-code="selectedCode"
           :reveal="reveal"
@@ -82,6 +104,9 @@ const mapUiState = computed(() => ({
           :failed-codes="failedCodesList"
           :capital-points="capitalPoints"
           :stage="stage"
+          :available-codes="continent.codes"
+          :quick-select-countries="continent.quickSelect"
+          :map-view="continent.mapView"
           :ui-state="mapUiState"
           @update:flags-enabled="flagsEnabled = $event"
           @update:capitals-enabled="capitalsEnabled = $event"
@@ -151,7 +176,7 @@ const mapUiState = computed(() => ({
                     Region
                   </p>
                   <p class="mt-2 text-sm font-semibold text-ink md:text-base">
-                    {{ targetCountry?.subregion || targetCountry?.region || 'Europe' }}
+                    {{ targetCountry?.subregion || targetCountry?.region || continent.label }}
                   </p>
                 </div>
               </div>

@@ -1,16 +1,8 @@
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { fetchEuropeCountries, type CountryInfo } from '../services/countryApi'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, unref, type ComputedRef, type Ref } from 'vue'
+import { fetchCountries, type CountryInfo } from '../services/countryApi'
+import { EUROPE_CONTINENT, type ContinentConfig } from '../data/continents'
 
 export type Stage = 'name' | 'flag' | 'capital'
-
-const PLONKIT_OVERRIDES: Record<string, string> = {
-  BA: 'bosnia-and-herzegovina',
-  CZ: 'czechia',
-  GB: 'united-kingdom',
-  MK: 'north-macedonia',
-  VA: 'vatican-city',
-  XK: 'kosovo',
-}
 
 const toPlonkitSlug = (name: string) =>
   name
@@ -69,7 +61,15 @@ const writeSettings = (settings: { flagsEnabled: boolean; capitalsEnabled: boole
 
 type Progress = { name: boolean; flag: boolean; capital: boolean }
 
-export const useGameState = () => {
+type ContinentSource = ContinentConfig | Ref<ContinentConfig> | ComputedRef<ContinentConfig>
+
+type UseGameStateOptions = {
+  continent?: ContinentSource
+}
+
+export const useGameState = (options: UseGameStateOptions = {}) => {
+  const continentSource = options.continent ?? EUROPE_CONTINENT
+  const activeContinent = computed(() => unref(continentSource))
   const persisted = readSettings()
   const loading = ref(true)
   const errorMessage = ref('')
@@ -161,7 +161,7 @@ export const useGameState = () => {
       return ''
     }
 
-    const override = PLONKIT_OVERRIDES[targetCode.value]
+    const override = activeContinent.value.plonkitOverrides?.[targetCode.value]
     const slug = override ?? toPlonkitSlug(targetCountry.value.name)
     return `https://www.plonkit.net/${slug}`
   })
@@ -456,18 +456,49 @@ export const useGameState = () => {
     handlePrimaryAction()
   }
 
-  onMounted(async () => {
-    window.addEventListener('keydown', handleSpaceKey)
+  const resetProgress = () => {
+    progressByCode.clear()
+    remainingStagesByCode.clear()
+    foundCodes.value = new Set()
+    failedCodes.value = new Set()
+    selectedCode.value = null
+    reveal.value = false
+    isCorrect.value = null
+    targetCode.value = null
+    stage.value = 'name'
+  }
+
+  const loadContinent = async (next: ContinentConfig) => {
+    loading.value = true
+    errorMessage.value = ''
+    countries.value = {}
+    resetProgress()
 
     try {
-      countries.value = await fetchEuropeCountries()
+      countries.value = await fetchCountries(next.codes, next.cacheKey)
       pickNewTarget()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : 'Failed to load data.'
     } finally {
       loading.value = false
     }
+  }
+
+  onMounted(async () => {
+    window.addEventListener('keydown', handleSpaceKey)
+    await loadContinent(activeContinent.value)
   })
+
+  watch(
+    () => activeContinent.value.id,
+    async (nextId, prevId) => {
+      if (nextId === prevId) {
+        return
+      }
+
+      await loadContinent(activeContinent.value)
+    }
+  )
 
   watch([flagsEnabled, capitalsEnabled], () => {
     writeSettings({

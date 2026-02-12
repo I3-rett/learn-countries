@@ -1,9 +1,10 @@
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useGameState } from '../useGameState'
 import type { CountryInfo } from '../../services/countryApi'
-import { fetchEuropeCountries } from '../../services/countryApi'
+import { fetchCountries } from '../../services/countryApi'
+import type { ContinentConfig } from '../../data/continents'
 
 type GameState = ReturnType<typeof useGameState>
 type GameStateVm = {
@@ -28,7 +29,7 @@ const mockCountries: Record<string, CountryInfo> = {
 }
 
 vi.mock('../../services/countryApi', () => ({
-  fetchEuropeCountries: vi.fn(async () => mockCountries),
+  fetchCountries: vi.fn(async () => mockCountries),
 }))
 
 const createHarness = () =>
@@ -39,11 +40,12 @@ const createHarness = () =>
     template: '<div />',
   })
 
+
 describe('useGameState', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    vi.mocked(fetchEuropeCountries).mockResolvedValue(mockCountries)
+    vi.mocked(fetchCountries).mockResolvedValue(mockCountries)
   })
 
   afterEach(() => {
@@ -172,7 +174,7 @@ describe('useGameState', () => {
   })
 
   it('exposes a load error when country data fails', async () => {
-    vi.mocked(fetchEuropeCountries).mockRejectedValueOnce(new Error('Boom'))
+    vi.mocked(fetchCountries).mockRejectedValueOnce(new Error('Boom'))
 
     const wrapper = mount(createHarness())
     await flushPromises()
@@ -180,5 +182,50 @@ describe('useGameState', () => {
     const vm = wrapper.vm as unknown as GameStateVm
     expect(vm.errorMessage).toBe('Boom')
     expect(vm.actionDisabled).toBe(true)
+  })
+
+  it('reloads data when the continent changes', async () => {
+    const baseContinent: ContinentConfig = {
+      id: 'europe',
+      label: 'Europe',
+      editionLabel: 'Europe Edition',
+      codes: ['FR', 'DE'],
+      quickSelect: [],
+      mapView: { center: [0, 0], zoom: 2, minZoom: 1, maxZoom: 6 },
+      cacheKey: 'test-europe-cache',
+    }
+
+    const nextContinent: ContinentConfig = {
+      id: 'custom',
+      label: 'Custom',
+      editionLabel: 'Custom Edition',
+      codes: ['DE'],
+      quickSelect: [],
+      mapView: { center: [5, 5], zoom: 3, minZoom: 1, maxZoom: 6 },
+      cacheKey: 'test-custom-cache',
+    }
+
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          const continent = ref(baseContinent)
+          const state = useGameState({ continent })
+          return { continent, ...state }
+        },
+        template: '<div />',
+      })
+    )
+
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm & { continent: ContinentConfig }
+    expect(vm.targetCode).toBe('FR')
+    expect(fetchCountries).toHaveBeenCalledWith(['FR', 'DE'], 'test-europe-cache')
+
+    vm.continent = nextContinent
+    await flushPromises()
+
+    expect(fetchCountries).toHaveBeenCalledWith(['DE'], 'test-custom-cache')
+    wrapper.unmount()
   })
 })
