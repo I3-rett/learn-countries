@@ -3,6 +3,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import { EUROPE_CODES } from '../data/europe'
 
+type Stage = 'name' | 'flag' | 'capital'
+
 type Props = {
   targetCode: string | null
   selectedCode: string | null
@@ -10,6 +12,8 @@ type Props = {
   foundCodes: string[]
   partialCodes: string[]
   failedCodes: string[]
+  capitalPoints: Array<{ code: string; name: string; lat: number; lng: number }>
+  stage: Stage
   actionLabel: string
   actionDisabled: boolean
 }
@@ -26,6 +30,8 @@ const mapZoom = ref<number | null>(null)
 
 let map: L.Map | null = null
 let geoLayer: L.GeoJSON | null = null
+let capitalLayer: L.LayerGroup | null = null
+let capitalMarkers = new Map<string, L.CircleMarker>()
 
 const GEOJSON_URL =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
@@ -97,6 +103,66 @@ const selectedStyle: L.PathOptions = {
 const hoverStyle: L.PathOptions = {
   weight: 2,
   dashArray: '',
+}
+
+const capitalBaseStyle: L.CircleMarkerOptions = {
+  radius: 5,
+  color: '#0d0f14',
+  weight: 1.2,
+  fillColor: '#ffb08a',
+  fillOpacity: 0.85,
+  pane: 'capitals',
+  className: 'capital-marker',
+}
+
+const capitalSelectedStyle: L.CircleMarkerOptions = {
+  radius: 7,
+  color: '#0d0f14',
+  weight: 2,
+  fillColor: '#ff8a65',
+  fillOpacity: 1,
+  pane: 'capitals',
+  className: 'capital-marker',
+}
+
+const capitalCorrectStyle: L.CircleMarkerOptions = {
+  radius: 7,
+  color: '#0d0f14',
+  weight: 2.4,
+  fillColor: '#2bb673',
+  fillOpacity: 0.95,
+  pane: 'capitals',
+  className: 'capital-marker',
+}
+
+const capitalAnswerStyle: L.CircleMarkerOptions = {
+  radius: 7,
+  color: '#0d0f14',
+  weight: 2.4,
+  fillColor: '#d32f2f',
+  fillOpacity: 0.95,
+  pane: 'capitals',
+  className: 'capital-marker',
+}
+
+const capitalFoundStyle: L.CircleMarkerOptions = {
+  radius: 5,
+  color: '#0d0f14',
+  weight: 1.2,
+  fillColor: '#2bb673',
+  fillOpacity: 0.6,
+  pane: 'capitals',
+  className: 'capital-marker',
+}
+
+const capitalFailedStyle: L.CircleMarkerOptions = {
+  radius: 5,
+  color: '#0d0f14',
+  weight: 1.2,
+  fillColor: '#ff5c3c',
+  fillOpacity: 0.7,
+  pane: 'capitals',
+  className: 'capital-marker',
 }
 
 const tinyCountryQuickSelect = [
@@ -250,6 +316,10 @@ const canQuickSelect = (code: string) => {
     return false
   }
 
+  if (props.stage === 'capital') {
+    return false
+  }
+
   if (props.foundCodes.includes(code) || props.failedCodes.includes(code)) {
     return false
   }
@@ -314,6 +384,92 @@ const applyLayerStyles = () => {
   })
 }
 
+const getCapitalMarkerStyle = (code: string) => {
+  if (props.foundCodes.includes(code)) {
+    return capitalFoundStyle
+  }
+
+  if (props.failedCodes.includes(code)) {
+    return capitalFailedStyle
+  }
+
+  if (props.stage !== 'capital') {
+    return capitalBaseStyle
+  }
+
+  if (!props.reveal && props.selectedCode && code === props.selectedCode) {
+    return capitalSelectedStyle
+  }
+
+  if (props.reveal && props.targetCode && code === props.targetCode) {
+    return props.selectedCode === props.targetCode ? capitalCorrectStyle : capitalAnswerStyle
+  }
+
+  return capitalBaseStyle
+}
+
+const updateCapitalLayerVisibility = () => {
+  if (!map || !capitalLayer) {
+    return
+  }
+
+  if (!map.hasLayer(capitalLayer)) {
+    capitalLayer.addTo(map)
+  }
+}
+
+const rebuildCapitalMarkers = () => {
+  if (!map) {
+    return
+  }
+
+  if (capitalLayer) {
+    map.removeLayer(capitalLayer)
+  }
+
+  capitalLayer = L.layerGroup()
+  capitalMarkers = new Map()
+
+  props.capitalPoints.forEach((point) => {
+    const marker = L.circleMarker([point.lat, point.lng], getCapitalMarkerStyle(point.code))
+
+    marker.on('click', () => {
+      if (props.stage !== 'capital' || props.reveal) {
+        return
+      }
+
+      if (props.foundCodes.includes(point.code) || props.failedCodes.includes(point.code)) {
+        return
+      }
+
+      emit('country-selected', point.code)
+    })
+
+    marker.on('mouseover', () => {
+      if (props.stage !== 'capital' || props.reveal) {
+        return
+      }
+
+      marker.setStyle({ ...getCapitalMarkerStyle(point.code), radius: 7 })
+    })
+
+    marker.on('mouseout', () => {
+      marker.setStyle(getCapitalMarkerStyle(point.code))
+    })
+
+    marker.addTo(capitalLayer as L.LayerGroup)
+    capitalMarkers.set(point.code, marker)
+  })
+
+  updateCapitalLayerVisibility()
+}
+
+const applyCapitalStyles = () => {
+  capitalMarkers.forEach((marker, code) => {
+    marker.setStyle(getCapitalMarkerStyle(code))
+  })
+}
+
 const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
   const europeFeatures = geojson.features.filter((feature) => {
     const code = getFeatureCode(feature)
@@ -355,7 +511,7 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
 
       if (!isFailed) {
         pathLayer.on('click', () => {
-          if (!props.reveal) {
+          if (!props.reveal && props.stage !== 'capital') {
             emit('country-selected', code)
           }
         })
@@ -391,6 +547,9 @@ onMounted(async () => {
     scrollWheelZoom: true,
   })
 
+  const capitalPane = map.createPane('capitals')
+  capitalPane.style.zIndex = '650'
+
   map.setView([49.5822, 2.714], 4.5)
 
   updateMapView()
@@ -416,6 +575,7 @@ onMounted(async () => {
 
     const geojson = (await response.json()) as GeoJSON.FeatureCollection
     buildLayer(geojson)
+    rebuildCapitalMarkers()
   } catch (error) {
     console.error('Map data error:', error)
   }
@@ -426,6 +586,8 @@ onBeforeUnmount(() => {
   map?.remove()
   map = null
   geoLayer = null
+  capitalLayer = null
+  capitalMarkers = new Map()
 })
 
 watch(
@@ -436,10 +598,22 @@ watch(
     props.foundCodes,
     props.partialCodes,
     props.failedCodes,
+    props.stage,
   ],
   () => {
     applyLayerStyles()
+    applyCapitalStyles()
+    updateCapitalLayerVisibility()
   }
+)
+
+watch(
+  () => props.capitalPoints,
+  () => {
+    rebuildCapitalMarkers()
+    applyCapitalStyles()
+  },
+  { deep: true }
 )
 </script>
 

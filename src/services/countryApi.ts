@@ -5,6 +5,7 @@ export type CountryInfo = {
   name: string
   frenchName?: string
   capital: string
+  capitalLatLng?: { lat: number; lng: number }
   region?: string
   subregion?: string
   flagUrl?: string
@@ -16,6 +17,7 @@ type ApiCountry = {
   name?: { common?: string }
   translations?: { fra?: { common?: string } }
   capital?: string[]
+  capitalInfo?: { latlng?: [number, number] }
   region?: string
   subregion?: string
   flags?: { png?: string; svg?: string; alt?: string }
@@ -24,13 +26,14 @@ type ApiCountry = {
 const API_URL = 'https://restcountries.com/v3.1/alpha'
 const SECONDARY_API_URL = 'https://restcountries.com/v2/alpha'
 const REQUEST_TIMEOUT_MS = 12000
-const CACHE_KEY = 'learn-countries:europe-cache-v1'
+const CACHE_KEY = 'learn-countries:europe-cache-v2'
 
 type ApiCountryV2 = {
   alpha2Code: string
   name?: string
   translations?: { fr?: string }
   capital?: string
+  latlng?: number[]
   region?: string
   subregion?: string
   flag?: string
@@ -71,11 +74,17 @@ const mapV3Countries = (payload: ApiCountry[]) => {
       continue
     }
 
+    const capitalCoords = country.capitalInfo?.latlng
+    const [capitalLat, capitalLng] = capitalCoords ?? []
     countryMap[code] = {
       code,
       name: country.name?.common ?? code,
       frenchName: country.translations?.fra?.common,
       capital: country.capital?.[0] ?? 'Unknown',
+      capitalLatLng:
+        typeof capitalLat === 'number' && typeof capitalLng === 'number'
+          ? { lat: capitalLat, lng: capitalLng }
+          : undefined,
       region: country.region,
       subregion: country.subregion,
       flagUrl: country.flags?.svg || country.flags?.png,
@@ -96,11 +105,17 @@ const mapV2Countries = (payload: ApiCountryV2[]) => {
       continue
     }
 
+    const capitalCoords = country.latlng
+    const [capitalLat, capitalLng] = capitalCoords ?? []
     countryMap[code] = {
       code,
       name: country.name ?? code,
       frenchName: country.translations?.fr,
       capital: country.capital ?? 'Unknown',
+      capitalLatLng:
+        typeof capitalLat === 'number' && typeof capitalLng === 'number'
+          ? { lat: capitalLat, lng: capitalLng }
+          : undefined,
       region: country.region,
       subregion: country.subregion,
       flagUrl: country.flag,
@@ -124,8 +139,10 @@ const fetchWithTimeout = async (url: string) => {
 
 export async function fetchEuropeCountries(): Promise<Record<EuropeCode, CountryInfo>> {
   const codes = EUROPE_CODES.join(',')
-  const url = `${API_URL}?codes=${codes}&fields=name,translations,capital,cca2,region,subregion,flags`
-  const secondaryUrl = `${SECONDARY_API_URL}?codes=${codes}&fields=name;translations;capital;alpha2Code;region;subregion;flag`
+  const url =
+    `${API_URL}?codes=${codes}&fields=name,translations,capital,capitalInfo,cca2,region,subregion,flags`
+  const secondaryUrl =
+    `${SECONDARY_API_URL}?codes=${codes}&fields=name;translations;capital;latlng;alpha2Code;region;subregion;flag`
 
   try {
     const response = await fetchWithTimeout(url)

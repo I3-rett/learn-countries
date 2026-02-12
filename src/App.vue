@@ -7,18 +7,29 @@ const loading = ref(true)
 const errorMessage = ref('')
 const countries = ref<Record<string, CountryInfo>>({})
 
-type Stage = 'name' | 'flag'
+type Stage = 'name' | 'flag' | 'capital'
 
 const targetCode = ref<string | null>(null)
 const selectedCode = ref<string | null>(null)
 const reveal = ref(false)
 const isCorrect = ref<boolean | null>(null)
 const correctCount = ref(0)
-const totalCount = computed(() => Object.keys(countries.value).length * 2)
+const totalCount = computed(() =>
+  Object.values(countries.value).reduce((sum, country) => {
+    let count = 1
+    if (country.flagUrl) {
+      count += 1
+    }
+    if (country.capitalLatLng) {
+      count += 1
+    }
+    return sum + count
+  }, 0)
+)
 const foundCodes = ref(new Set<string>())
 const failedCodes = ref(new Set<string>())
 const stage = ref<Stage>('name')
-const progressByCode = ref<Record<string, { name: boolean; flag: boolean }>>({})
+const progressByCode = ref<Record<string, { name: boolean; flag: boolean; capital: boolean }>>({})
 
 const targetCountry = computed(() =>
   targetCode.value ? countries.value[targetCode.value] : undefined
@@ -27,9 +38,20 @@ const selectedCountry = computed(() =>
   selectedCode.value ? countries.value[selectedCode.value] : undefined
 )
 const isFlagStage = computed(() => stage.value === 'flag')
-const targetTitle = computed(() =>
-  isFlagStage.value ? 'Which country is this flag?' : promptLabel.value
-)
+const isCapitalStage = computed(() => stage.value === 'capital')
+const targetTitle = computed(() => {
+  if (isFlagStage.value) {
+    return 'Which country is this flag?'
+  }
+
+  if (isCapitalStage.value) {
+    return targetCountry.value?.capital
+      ? `Find "${targetCountry.value.capital}".`
+      : 'Find the capital city.'
+  }
+
+  return promptLabel.value
+})
 
 const statusLabel = computed(() => {
   if (!reveal.value) {
@@ -59,13 +81,23 @@ const promptLabel = computed(() => {
   return targetCountry.value?.name ?? 'Ready for a new round?'
 })
 
+const instructionLabel = computed(() =>
+  isCapitalStage.value
+    ? 'Click the capital city marker that matches the prompt, then confirm your choice.'
+    : 'Click the country that matches the prompt, then confirm your choice.'
+)
+
 const hintLabel = computed(() => {
   if (loading.value || errorMessage.value) {
-    return 'Click the country outline on the map.'
+    return isCapitalStage.value
+      ? 'Click the capital city marker.'
+      : 'Click the country outline on the map.'
   }
 
   if (!reveal.value || !targetCountry.value) {
-    return 'Click the country outline on the map.'
+    return isCapitalStage.value
+      ? 'Click the capital city marker.'
+      : 'Click the country outline on the map.'
   }
 
   return `Capital: ${targetCountry.value.capital}`
@@ -78,7 +110,9 @@ const answerSummary = computed(() => {
 
   if (isCorrect.value) {
     const progress = targetCode.value ? progressByCode.value[targetCode.value] : undefined
-    const completed = !!progress?.name && !!progress?.flag
+    const completed = progress && targetCode.value
+      ? isCodeComplete(targetCode.value, progress)
+      : false
     return completed
       ? `You completed ${targetCountry.value.name}.`
       : `Correct!`
@@ -118,40 +152,93 @@ const foundCodesList = computed(() => Array.from(foundCodes.value))
 const failedCodesList = computed(() => Array.from(failedCodes.value))
 const partialCodesList = computed(() =>
   Object.entries(progressByCode.value)
-    .filter(([, progress]) => progress.name !== progress.flag)
+    .filter(([code, progress]) => {
+      const completed = isCodeComplete(code, progress)
+      const anyProgress = progress.name || progress.flag || progress.capital
+      return anyProgress && !completed
+    })
     .map(([code]) => code)
+)
+
+const capitalPoints = computed(() =>
+  Object.values(countries.value)
+    .filter((country) => country.capitalLatLng)
+    .map((country) => ({
+      code: country.code,
+      name: country.capital,
+      lat: country.capitalLatLng?.lat ?? 0,
+      lng: country.capitalLatLng?.lng ?? 0,
+    }))
 )
 
 const getProgress = (code: string) => {
   if (!progressByCode.value[code]) {
-    progressByCode.value[code] = { name: false, flag: false }
+    progressByCode.value[code] = { name: false, flag: false, capital: false }
   }
 
   return progressByCode.value[code]
 }
 
-const getInitialStage = (code: string): Stage => {
-  const hasFlag = !!countries.value[code]?.flagUrl
+const getAvailableStages = (code: string) => {
+  const stages: Stage[] = ['name']
 
-  if (!hasFlag) {
-    return 'name'
+  if (countries.value[code]?.flagUrl) {
+    stages.push('flag')
   }
 
-  return Math.random() < 0.5 ? 'name' : 'flag'
+  if (countries.value[code]?.capitalLatLng) {
+    stages.push('capital')
+  }
+
+  return stages
+}
+
+const isStageComplete = (
+  progress: { name: boolean; flag: boolean; capital: boolean },
+  stageValue: Stage
+) => {
+  switch (stageValue) {
+    case 'name':
+      return progress.name
+    case 'flag':
+      return progress.flag
+    case 'capital':
+      return progress.capital
+    default:
+      return false
+  }
+}
+
+const isCodeComplete = (code: string, progress: { name: boolean; flag: boolean; capital: boolean }) => {
+  const hasFlag = !!countries.value[code]?.flagUrl
+  const hasCapital = !!countries.value[code]?.capitalLatLng
+  return (
+    progress.name &&
+    (!hasFlag || progress.flag) &&
+    (!hasCapital || progress.capital)
+  )
+}
+
+const getInitialStage = (code: string): Stage => {
+  const stages = getAvailableStages(code)
+  return stages[Math.floor(Math.random() * stages.length)] ?? 'name'
 }
 
 const getStageForCode = (code: string): Stage => {
   const progress = getProgress(code)
+  const remainingStages = getAvailableStages(code).filter(
+    (stageValue) => !isStageComplete(progress, stageValue)
+  )
 
-  if (progress.name && !progress.flag) {
-    return 'flag'
+  if (!remainingStages.length) {
+    return getInitialStage(code)
   }
 
-  if (progress.flag && !progress.name) {
-    return 'name'
+  if (remainingStages.length === 1) {
+    return remainingStages[0] ?? 'name'
   }
 
-  return getInitialStage(code)
+  return remainingStages[Math.floor(Math.random() * remainingStages.length)] ?? 'name'
 }
 
 const pickNewTarget = () => {
@@ -195,14 +282,19 @@ const confirmGuess = () => {
         progress.name = true
         correctCount.value += 1
       }
-    } else {
+    } else if (stage.value === 'flag') {
       if (!progress.flag) {
         progress.flag = true
         correctCount.value += 1
       }
+    } else if (stage.value === 'capital') {
+      if (!progress.capital) {
+        progress.capital = true
+        correctCount.value += 1
+      }
     }
 
-    if (progress.name && progress.flag) {
+    if (isCodeComplete(targetCode.value, progress)) {
       foundCodes.value.add(targetCode.value)
     }
   } else {
@@ -317,6 +409,8 @@ onBeforeUnmount(() => {
           :found-codes="foundCodesList"
           :partial-codes="partialCodesList"
           :failed-codes="failedCodesList"
+          :capital-points="capitalPoints"
+          :stage="stage"
           :action-label="actionLabel"
           :action-disabled="actionDisabled"
           @country-selected="handleGuess"
@@ -331,7 +425,10 @@ onBeforeUnmount(() => {
           </p>
           <div v-if="!reveal">
             <h2 class="mt-3 text-4xl text-ink">{{ targetTitle }}</h2>
-            <p v-if="!isFlagStage && targetCountry?.frenchName" class="mt-2 text-lg text-ink/60">
+            <p
+              v-if="!isFlagStage && !isCapitalStage && targetCountry?.frenchName"
+              class="mt-2 text-lg text-ink/60"
+            >
               {{ targetCountry.frenchName }}
             </p>
             <div
@@ -348,7 +445,7 @@ onBeforeUnmount(() => {
               <span v-else class="text-xs uppercase tracking-[0.3em] text-ink/40">Flag</span>
             </div>
             <p class="mt-3 text-base text-ink/70">
-              Click the country that matches the prompt, then confirm your choice.
+              {{ instructionLabel }}
             </p>
           </div>
           <div
