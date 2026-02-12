@@ -1,3 +1,11 @@
+it('only Europe countries are selectable on initial load', async () => {
+  const { availableCodes } = useGameState()
+  // Wait for the map to load
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  // Europe codes are defined in the map config
+  const { EUROPE_CODES } = await import('../../data/maps')
+  expect(availableCodes.value.sort()).toEqual([...EUROPE_CODES].sort())
+})
 import { defineComponent, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

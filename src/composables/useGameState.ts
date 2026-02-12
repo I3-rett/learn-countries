@@ -228,7 +228,15 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
       }))
   )
 
-  const availableCodes = computed(() => Object.keys(countries.value))
+  // Only allow codes from the current map config (e.g., Europe) to be selectable
+  const availableCodes = computed(() => {
+    const map = activeMap.value
+    if (map.kind === 'countries' && map.codes) {
+      // Only allow codes defined in the map config (e.g., EUROPE_CODES)
+      return Object.keys(countries.value).filter((code) => map.codes!.includes(code as any))
+    }
+    return Object.keys(countries.value)
+  })
 
   const getProgress = (code: string) => {
     if (!progressByCode.has(code)) {
