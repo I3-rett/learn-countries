@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EuropeMap from './components/EuropeMap.vue'
 import { fetchEuropeCountries, type CountryInfo } from './services/countryApi'
 
 const loading = ref(true)
 const errorMessage = ref('')
 const countries = ref<Record<string, CountryInfo>>({})
+const flagsEnabled = ref(false)
+const capitalsEnabled = ref(false)
 
 type Stage = 'name' | 'flag' | 'capital'
 
@@ -13,19 +15,6 @@ const targetCode = ref<string | null>(null)
 const selectedCode = ref<string | null>(null)
 const reveal = ref(false)
 const isCorrect = ref<boolean | null>(null)
-const correctCount = ref(0)
-const totalCount = computed(() =>
-  Object.values(countries.value).reduce((sum, country) => {
-    let count = 1
-    if (country.flagUrl) {
-      count += 1
-    }
-    if (country.capitalLatLng) {
-      count += 1
-    }
-    return sum + count
-  }, 0)
-)
 const foundCodes = ref(new Set<string>())
 const failedCodes = ref(new Set<string>())
 const stage = ref<Stage>('name')
@@ -148,13 +137,47 @@ const plonkitUrl = computed(() => {
   return `https://www.plonkit.net/${slug}`
 })
 
+const nameTotal = computed(() => Object.keys(countries.value).length)
+const flagTotal = computed(() =>
+  Object.values(countries.value).filter((country) => country.flagUrl).length
+)
+const capitalTotal = computed(() =>
+  Object.values(countries.value).filter((country) => country.capitalLatLng).length
+)
+
+const nameScore = computed(() =>
+  Object.entries(progressByCode.value).reduce(
+    (sum, [, progress]) => sum + (progress.name ? 1 : 0),
+    0
+  )
+)
+const flagScore = computed(() =>
+  Object.entries(countries.value).reduce((sum, [code, country]) => {
+    if (!country.flagUrl) {
+      return sum
+    }
+    return sum + (progressByCode.value[code]?.flag ? 1 : 0)
+  }, 0)
+)
+const capitalScore = computed(() =>
+  Object.entries(countries.value).reduce((sum, [code, country]) => {
+    if (!country.capitalLatLng) {
+      return sum
+    }
+    return sum + (progressByCode.value[code]?.capital ? 1 : 0)
+  }, 0)
+)
+
 const foundCodesList = computed(() => Array.from(foundCodes.value))
 const failedCodesList = computed(() => Array.from(failedCodes.value))
 const partialCodesList = computed(() =>
   Object.entries(progressByCode.value)
     .filter(([code, progress]) => {
       const completed = isCodeComplete(code, progress)
-      const anyProgress = progress.name || progress.flag || progress.capital
+      const anyProgress =
+        progress.name ||
+        (flagsEnabled.value && progress.flag) ||
+        (capitalsEnabled.value && progress.capital)
       return anyProgress && !completed
     })
     .map(([code]) => code)
@@ -182,11 +205,11 @@ const getProgress = (code: string) => {
 const getAvailableStages = (code: string) => {
   const stages: Stage[] = ['name']
 
-  if (countries.value[code]?.flagUrl) {
+  if (flagsEnabled.value && countries.value[code]?.flagUrl) {
     stages.push('flag')
   }
 
-  if (countries.value[code]?.capitalLatLng) {
+  if (capitalsEnabled.value && countries.value[code]?.capitalLatLng) {
     stages.push('capital')
   }
 
@@ -210,8 +233,8 @@ const isStageComplete = (
 }
 
 const isCodeComplete = (code: string, progress: { name: boolean; flag: boolean; capital: boolean }) => {
-  const hasFlag = !!countries.value[code]?.flagUrl
-  const hasCapital = !!countries.value[code]?.capitalLatLng
+  const hasFlag = flagsEnabled.value && !!countries.value[code]?.flagUrl
+  const hasCapital = capitalsEnabled.value && !!countries.value[code]?.capitalLatLng
   return (
     progress.name &&
     (!hasFlag || progress.flag) &&
@@ -259,6 +282,16 @@ const pickNewTarget = () => {
   stage.value = nextCode ? getStageForCode(nextCode) : 'name'
 }
 
+const refreshFoundCodes = () => {
+  const refreshed = new Set<string>()
+  Object.entries(progressByCode.value).forEach(([code, progress]) => {
+    if (isCodeComplete(code, progress)) {
+      refreshed.add(code)
+    }
+  })
+  foundCodes.value = refreshed
+}
+
 const handleGuess = (code: string) => {
   if (reveal.value) {
     return
@@ -280,17 +313,14 @@ const confirmGuess = () => {
     if (stage.value === 'name') {
       if (!progress.name) {
         progress.name = true
-        correctCount.value += 1
       }
     } else if (stage.value === 'flag') {
       if (!progress.flag) {
         progress.flag = true
-        correctCount.value += 1
       }
     } else if (stage.value === 'capital') {
       if (!progress.capital) {
         progress.capital = true
-        correctCount.value += 1
       }
     }
 
@@ -371,6 +401,21 @@ onMounted(async () => {
   }
 })
 
+watch([flagsEnabled, capitalsEnabled], () => {
+  refreshFoundCodes()
+  if (!targetCode.value) {
+    return
+  }
+
+  const availableStages = getAvailableStages(targetCode.value)
+  if (!availableStages.includes(stage.value)) {
+    stage.value = getStageForCode(targetCode.value)
+    selectedCode.value = null
+    reveal.value = false
+    isCorrect.value = null
+  }
+})
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleSpaceKey)
 })
@@ -395,8 +440,23 @@ onBeforeUnmount(() => {
         >
           {{ statusLabel }}
         </div>
-        <p class="text-sm font-semibold text-ink/70">Score: {{ correctCount }}/{{ totalCount }}</p>
+        <div class="text-sm text-ink/70">
+          <p class="font-semibold">Names: {{ nameScore }}/{{ nameTotal }}</p>
+          <p v-if="flagsEnabled" class="font-semibold">Flags: {{ flagScore }}/{{ flagTotal }}</p>
+          <p v-if="capitalsEnabled" class="font-semibold">Capitals: {{ capitalScore }}/{{ capitalTotal }}</p>
+        </div>
         <p class="text-sm text-ink/70">{{ hintLabel }}</p>
+        <div class="mt-2 flex flex-col gap-2">
+          <p class="text-xs uppercase tracking-[0.3em] text-ink/50">Difficulty</p>
+          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70">
+            <input v-model="flagsEnabled" type="checkbox" class="h-4 w-4 rounded border-ink/30" />
+            Flags
+          </label>
+          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70">
+            <input v-model="capitalsEnabled" type="checkbox" class="h-4 w-4 rounded border-ink/30" />
+            Capitals
+          </label>
+        </div>
       </div>
     </header>
 
@@ -410,6 +470,7 @@ onBeforeUnmount(() => {
           :partial-codes="partialCodesList"
           :failed-codes="failedCodesList"
           :capital-points="capitalPoints"
+          :show-capitals="capitalsEnabled"
           :stage="stage"
           :action-label="actionLabel"
           :action-disabled="actionDisabled"

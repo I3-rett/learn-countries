@@ -13,6 +13,7 @@ type Props = {
   partialCodes: string[]
   failedCodes: string[]
   capitalPoints: Array<{ code: string; name: string; lat: number; lng: number }>
+  showCapitals: boolean
   stage: Stage
   actionLabel: string
   actionDisabled: boolean
@@ -385,6 +386,10 @@ const applyLayerStyles = () => {
 }
 
 const getCapitalMarkerStyle = (code: string) => {
+  if (!props.showCapitals) {
+    return { ...capitalBaseStyle, fillOpacity: 0, opacity: 0 }
+  }
+
   if (props.foundCodes.includes(code)) {
     return capitalFoundStyle
   }
@@ -410,6 +415,13 @@ const getCapitalMarkerStyle = (code: string) => {
 
 const updateCapitalLayerVisibility = () => {
   if (!map || !capitalLayer) {
+    return
+  }
+
+  if (!props.showCapitals) {
+    if (map.hasLayer(capitalLayer)) {
+      map.removeLayer(capitalLayer)
+    }
     return
   }
 
@@ -599,6 +611,7 @@ watch(
     props.partialCodes,
     props.failedCodes,
     props.stage,
+    props.showCapitals,
   ],
   () => {
     applyLayerStyles()
