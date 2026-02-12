@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import { EUROPE_CODES } from '../data/europe'
 
@@ -17,12 +17,25 @@ type Props = {
   stage: Stage
   actionLabel: string
   actionDisabled: boolean
+  statusLabel: string
+  statusTone: string
+  hintLabel: string
+  flagsEnabled: boolean
+  capitalsEnabled: boolean
+  nameScore: number
+  nameTotal: number
+  flagScore: number
+  flagTotal: number
+  capitalScore: number
+  capitalTotal: number
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (event: 'country-selected', code: string): void
   (event: 'confirm-action'): void
+  (event: 'update:flags-enabled', value: boolean): void
+  (event: 'update:capitals-enabled', value: boolean): void
 }>()
 
 const mapEl = ref<HTMLDivElement | null>(null)
@@ -344,6 +357,28 @@ const handleConfirmAction = () => {
   emit('confirm-action')
 }
 
+const actionButtonLabel = computed(() =>
+  props.actionDisabled ? props.statusLabel : props.actionLabel
+)
+
+const handleFlagsToggle = (event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  if (!target) {
+    return
+  }
+
+  emit('update:flags-enabled', target.checked)
+}
+
+const handleCapitalsToggle = (event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  if (!target) {
+    return
+  }
+
+  emit('update:capitals-enabled', target.checked)
+}
+
 const updateMapView = () => {
   if (!map) {
     return
@@ -633,12 +668,16 @@ watch(
 <template>
   <div class="relative h-[62vh] min-h-[420px] w-full overflow-hidden rounded-3xl border border-ink/10">
     <div ref="mapEl" class="relative z-0 h-full w-full"></div>
-    <div
-      class="pointer-events-none absolute left-6 top-6 z-10 rounded-full bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-ink"
-    >
-      Europe Focus
+    <div class="absolute right-4 top-4 z-10 rounded-2xl border border-ink/10 bg-white/95 px-4 py-3 text-xs text-ink shadow-2xl backdrop-blur">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Score</p>
+      <p class="mt-2 font-semibold">Names: {{ props.nameScore }}/{{ props.nameTotal }}</p>
+      <p v-if="props.flagsEnabled" class="font-semibold">Flags: {{ props.flagScore }}/{{ props.flagTotal }}</p>
+      <p v-if="props.capitalsEnabled" class="font-semibold">
+        Capitals: {{ props.capitalScore }}/{{ props.capitalTotal }}
+      </p>
     </div>
-    <div class="absolute bottom-4 left-4 z-10 rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
+    <div class="absolute bottom-4 left-4 z-10 flex flex-wrap gap-3">
+      <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
       <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">
         Quick Select
       </p>
@@ -661,16 +700,36 @@ watch(
         </button>
       </div>
     </div>
+      <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Difficulty</p>
+        <div class="mt-2 flex flex-col gap-2">
+          <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-ink/30"
+              :checked="props.flagsEnabled"
+              @change="handleFlagsToggle"
+            />
+            Flags
+          </label>
+          <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-ink/30"
+              :checked="props.capitalsEnabled"
+              @change="handleCapitalsToggle"
+            />
+            Capitals
+          </label>
+        </div>
+      </div>
+    </div>
     <div
-      class="absolute right-4 top-4 z-10 rounded-2xl border border-ink/10 bg-white/95 p-4 shadow-2xl backdrop-blur"
+      class="absolute bottom-4 right-4 z-10 rounded-2xl border border-ink/10 bg-white/95 p-4 shadow-2xl backdrop-blur"
       :class="{
         'ring-2 ring-emerald-300/70': !props.actionDisabled && props.actionLabel === 'Confirm',
       }"
     >
-      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Action</p>
-      <p class="mt-1 text-xs text-ink/60">
-        {{ props.actionLabel === 'Confirm' ? 'Confirm your pick' : 'Start next round' }}
-      </p>
       <button
         type="button"
         class="mt-3 h-11 rounded-full border border-ink/10 px-6 text-sm font-semibold text-ink transition"
@@ -681,16 +740,8 @@ watch(
         :disabled="props.actionDisabled"
         @click="handleConfirmAction"
       >
-        {{ props.actionLabel }}
+        {{ actionButtonLabel }}
       </button>
-    </div>
-    <div
-      v-if="mapCenter && mapZoom !== null"
-      class="absolute bottom-4 right-4 z-10 rounded-2xl bg-white/70 px-4 py-3 text-xs text-ink shadow-md backdrop-blur-sm"
-    >
-      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Map View</p>
-      <p class="mt-1 select-text font-mono">Center: [{{ mapCenter.lat }}, {{ mapCenter.lng }}]</p>
-      <p class="select-text font-mono">Zoom: {{ mapZoom }}</p>
     </div>
   </div>
 </template>

@@ -432,32 +432,6 @@ onBeforeUnmount(() => {
           answer and a quick geography fact.
         </p>
       </div>
-      <div class="panel flex min-w-[260px] flex-col gap-3 px-6 py-4">
-        <p class="text-xs uppercase tracking-[0.3em] text-ink/60">Round Status</p>
-        <div
-          class="flex h-12 items-center rounded-2xl px-4 text-center text-lg font-semibold"
-          :class="statusTone"
-        >
-          {{ statusLabel }}
-        </div>
-        <div class="text-sm text-ink/70">
-          <p class="font-semibold">Names: {{ nameScore }}/{{ nameTotal }}</p>
-          <p v-if="flagsEnabled" class="font-semibold">Flags: {{ flagScore }}/{{ flagTotal }}</p>
-          <p v-if="capitalsEnabled" class="font-semibold">Capitals: {{ capitalScore }}/{{ capitalTotal }}</p>
-        </div>
-        <p class="text-sm text-ink/70">{{ hintLabel }}</p>
-        <div class="mt-2 flex flex-col gap-2">
-          <p class="text-xs uppercase tracking-[0.3em] text-ink/50">Difficulty</p>
-          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70">
-            <input v-model="flagsEnabled" type="checkbox" class="h-4 w-4 rounded border-ink/30" />
-            Flags
-          </label>
-          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70">
-            <input v-model="capitalsEnabled" type="checkbox" class="h-4 w-4 rounded border-ink/30" />
-            Capitals
-          </label>
-        </div>
-      </div>
     </header>
 
     <main class="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
@@ -474,6 +448,19 @@ onBeforeUnmount(() => {
           :stage="stage"
           :action-label="actionLabel"
           :action-disabled="actionDisabled"
+          :status-label="statusLabel"
+          :status-tone="statusTone"
+          :hint-label="hintLabel"
+          :flags-enabled="flagsEnabled"
+          :capitals-enabled="capitalsEnabled"
+          :name-score="nameScore"
+          :name-total="nameTotal"
+          :flag-score="flagScore"
+          :flag-total="flagTotal"
+          :capital-score="capitalScore"
+          :capital-total="capitalTotal"
+          @update:flags-enabled="flagsEnabled = $event"
+          @update:capitals-enabled="capitalsEnabled = $event"
           @country-selected="handleGuess"
           @confirm-action="handlePrimaryAction"
         />
