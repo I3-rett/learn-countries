@@ -3,6 +3,12 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useGameState } from '../useGameState'
 import type { CountryInfo } from '../../services/countryApi'
+import { fetchEuropeCountries } from '../../services/countryApi'
+
+type GameState = ReturnType<typeof useGameState>
+type GameStateVm = {
+  [K in keyof GameState]: GameState[K] extends { value: infer V } ? V : GameState[K]
+}
 
 const mockCountries: Record<string, CountryInfo> = {
   FR: {
@@ -11,6 +17,13 @@ const mockCountries: Record<string, CountryInfo> = {
     capital: 'Paris',
     capitalLatLng: { lat: 48.8566, lng: 2.3522 },
     flagUrl: 'https://example.com/fr.svg',
+  },
+  DE: {
+    code: 'DE',
+    name: 'Germany',
+    capital: 'Berlin',
+    capitalLatLng: { lat: 52.52, lng: 13.405 },
+    flagUrl: 'https://example.com/de.svg',
   },
 }
 
@@ -30,6 +43,7 @@ describe('useGameState', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.mocked(fetchEuropeCountries).mockResolvedValue(mockCountries)
   })
 
   afterEach(() => {
@@ -40,7 +54,7 @@ describe('useGameState', () => {
     const wrapper = mount(createHarness())
     await flushPromises()
 
-    const vm = wrapper.vm as unknown as ReturnType<typeof useGameState>
+    const vm = wrapper.vm as unknown as GameStateVm
     const code = vm.targetCode
     expect(code).toBe('FR')
 
@@ -52,11 +66,26 @@ describe('useGameState', () => {
     expect(vm.capitalScore).toBe(0)
   })
 
+  it('marks failed codes on incorrect guesses', async () => {
+    const wrapper = mount(createHarness())
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm
+    expect(vm.targetCode).toBe('FR')
+
+    vm.handleGuess('DE')
+    vm.handlePrimaryAction()
+
+    expect(vm.isCorrect).toBe(false)
+    expect(vm.reveal).toBe(true)
+    expect(vm.failedCodesList).toContain('FR')
+  })
+
   it('advances to a different stage when flags and capitals are enabled', async () => {
     const wrapper = mount(createHarness())
     await flushPromises()
 
-    const vm = wrapper.vm as unknown as ReturnType<typeof useGameState>
+    const vm = wrapper.vm as unknown as GameStateVm
     vm.flagsEnabled = true
     vm.capitalsEnabled = true
     await nextTick()
@@ -73,11 +102,35 @@ describe('useGameState', () => {
     expect(vm.stage).not.toBe(firstStage)
   })
 
+  it('resets stage and selection when toggles disable the current stage', async () => {
+    const wrapper = mount(createHarness())
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm
+    vm.flagsEnabled = true
+    vm.capitalsEnabled = true
+    await nextTick()
+
+    vm.stage = 'flag'
+    vm.selectedCode = vm.targetCode as string
+    vm.reveal = true
+    vm.isCorrect = true
+
+    vm.flagsEnabled = false
+    vm.capitalsEnabled = false
+    await nextTick()
+
+    expect(vm.stage).toBe('name')
+    expect(vm.selectedCode).toBe(null)
+    expect(vm.reveal).toBe(false)
+    expect(vm.isCorrect).toBe(null)
+  })
+
   it('resets progress and state on new game', async () => {
     const wrapper = mount(createHarness())
     await flushPromises()
 
-    const vm = wrapper.vm as unknown as ReturnType<typeof useGameState>
+    const vm = wrapper.vm as unknown as GameStateVm
     const code = vm.targetCode
 
     vm.handleGuess(code as string)
@@ -99,8 +152,33 @@ describe('useGameState', () => {
     const wrapper = mount(createHarness())
     await flushPromises()
 
-    const vm = wrapper.vm as unknown as ReturnType<typeof useGameState>
+    const vm = wrapper.vm as unknown as GameStateVm
     expect(vm.flagsEnabled).toBe(true)
     expect(vm.capitalsEnabled).toBe(true)
+  })
+
+  it('confirms guess on space key', async () => {
+    const wrapper = mount(createHarness())
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm
+    const code = vm.targetCode
+    vm.handleGuess(code as string)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space' }))
+
+    expect(vm.nameScore).toBe(1)
+    expect(vm.reveal).toBe(true)
+  })
+
+  it('exposes a load error when country data fails', async () => {
+    vi.mocked(fetchEuropeCountries).mockRejectedValueOnce(new Error('Boom'))
+
+    const wrapper = mount(createHarness())
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm
+    expect(vm.errorMessage).toBe('Boom')
+    expect(vm.actionDisabled).toBe(true)
   })
 })

@@ -78,4 +78,36 @@ describe('countryApi', () => {
     const data = await fetchEuropeCountries()
     expect(data.FR.name).toBe('France')
   })
+
+  it('filters non-european codes and tolerates missing capital data', async () => {
+    server.use(
+      http.get(API_URL, () => HttpResponse.json([
+        {
+          cca2: 'FR',
+          name: { common: 'France' },
+          capital: ['Paris'],
+        },
+        {
+          cca2: 'US',
+          name: { common: 'United States' },
+        },
+      ]))
+    )
+
+    const data = await fetchEuropeCountries()
+    expect('US' in data).toBe(false)
+    expect(data.FR.capitalLatLng).toBeUndefined()
+  })
+
+  it('writes mapped data to the cache on success', async () => {
+    server.use(
+      http.get(API_URL, () => HttpResponse.json(v3Payload))
+    )
+
+    await fetchEuropeCountries()
+
+    const cached = localStorage.getItem('learn-countries:europe-cache-v2')
+    expect(cached).toBeTruthy()
+    expect(cached).toContain('France')
+  })
 })
