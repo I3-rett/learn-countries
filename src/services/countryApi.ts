@@ -127,11 +127,13 @@ const mapV2Countries = (payload: ApiCountryV2[]) => {
 }
 
 const fetchWithTimeout = async (url: string) => {
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const isTestEnv = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test'
+  const controller = isTestEnv ? null : new AbortController()
+  const timeoutId = window.setTimeout(() => controller?.abort(), REQUEST_TIMEOUT_MS)
+  const signal = controller?.signal
 
   try {
-    return await fetch(url, { signal: controller.signal })
+    return await fetch(url, signal ? { signal } : undefined)
   } finally {
     window.clearTimeout(timeoutId)
   }

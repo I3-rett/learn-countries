@@ -5,4 +5,8 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   base: '/learn-countries/',
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['src/tests/setupTests.ts'],
+  },
 })
