@@ -31,6 +31,8 @@ type Props = {
     score: ScoreSnapshot
     flagsEnabled: boolean
     capitalsEnabled: boolean
+    supportsFlags: boolean
+    supportsCapitals: boolean
   }
 }
 
@@ -153,7 +155,10 @@ const handleReset = () => {
   <div class="absolute bottom-4 right-4 z-10 rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
     <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Difficulty</p>
     <div class="mt-2 flex flex-col gap-2">
-      <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+      <label
+        v-if="uiState.supportsFlags"
+        class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70"
+      >
         <input
           type="checkbox"
           class="h-4 w-4 rounded border-ink/30"
@@ -162,7 +167,10 @@ const handleReset = () => {
         />
         Flags
       </label>
-      <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+      <label
+        v-if="uiState.supportsCapitals"
+        class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70"
+      >
         <input
           type="checkbox"
           class="h-4 w-4 rounded border-ink/30"

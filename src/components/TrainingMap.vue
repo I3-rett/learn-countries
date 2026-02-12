@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
-import type { QuickSelectCountry } from '../data/continents'
+import type { QuickSelectCountry } from '../data/maps'
 import MapOverlay from './MapOverlay.vue'
 import { createCapitalLayer } from '../services/capitalMarkers'
 
@@ -18,6 +18,9 @@ type Props = {
   stage: Stage
   availableCodes: readonly string[]
   quickSelectCountries: readonly QuickSelectCountry[]
+  geojsonUrl?: string
+  featureCodeKey?: string
+  featureNameKey?: string
   mapView?: {
     center: [number, number]
     zoom: number
@@ -31,6 +34,8 @@ type Props = {
     statusLabel: string
     flagsEnabled: boolean
     capitalsEnabled: boolean
+    supportsFlags: boolean
+    supportsCapitals: boolean
     score: {
       nameScore: number
       nameTotal: number
@@ -58,7 +63,7 @@ let map: L.Map | null = null
 let geoLayer: L.GeoJSON | null = null
 let capitalLayer: ReturnType<typeof createCapitalLayer> | null = null
 
-const GEOJSON_URL =
+const DEFAULT_GEOJSON_URL =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
 
 const baseStyle: L.PathOptions = {
@@ -197,7 +202,11 @@ const aliasMap: Record<string, string> = {
 }
 
 const allowedSet = computed(() => new Set(props.availableCodes))
-const isAllowedCode = (code: string) => allowedSet.value.has(code)
+const shouldFilterByAllowed = computed(
+  () => props.availableCodes.length > 0 && !props.geojsonUrl
+)
+const isAllowedCode = (code: string) =>
+  !shouldFilterByAllowed.value || allowedSet.value.has(code)
 
 const normalizeCode = (value: string) => {
   const upperCode = value.toUpperCase()
@@ -233,6 +242,13 @@ const pickCodeFromProperties = (properties: Record<string, unknown> | undefined)
 const getFeatureCode = (feature: GeoJSON.Feature | undefined) => {
   if (!feature) {
     return ''
+  }
+
+  if (props.featureCodeKey && feature.properties) {
+    const value = (feature.properties as Record<string, unknown>)[props.featureCodeKey]
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value).trim()
+    }
   }
 
   const properties = feature.properties as
@@ -273,6 +289,13 @@ const getFeatureName = (feature: GeoJSON.Feature | undefined) => {
     return ''
   }
 
+  if (props.featureNameKey) {
+    const value = (feature.properties as Record<string, unknown>)[props.featureNameKey]
+    if (typeof value === 'string' && value.trim().length) {
+      return value.trim()
+    }
+  }
+
   const properties = feature.properties as Record<string, unknown>
   const nameCandidates = [
     properties.NAME,
@@ -292,7 +315,7 @@ const getFeatureName = (feature: GeoJSON.Feature | undefined) => {
 }
 
 const getStyleForCode = (code: string) => {
-  if (code && !isAllowedCode(code)) {
+  if (code && shouldFilterByAllowed.value && !isAllowedCode(code)) {
     return mutedStyle
   }
 
@@ -465,17 +488,21 @@ const ensureCapitalLayer = () => {
 }
 
 const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
+  if (geoLayer && map) {
+    map.removeLayer(geoLayer)
+  }
+
   const allowedFeatures = geojson.features.filter((feature) => {
     const code = getFeatureCode(feature)
     return isAllowedCode(code)
   })
 
-  const allowAnyClick = !allowedFeatures.length
+  const allowAnyClick = !allowedFeatures.length && !shouldFilterByAllowed.value
   const featuresToShow = allowedFeatures.length ? allowedFeatures : geojson.features
 
   console.info('Map feature stats', {
     total: geojson.features.length,
-    europe: allowedFeatures.length,
+    allowed: allowedFeatures.length,
   })
 
   geoLayer = L.geoJSON(featuresToShow, {
@@ -529,6 +556,42 @@ const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
   }
 }
 
+const updateView = (view: {
+  center: [number, number]
+  zoom: number
+  minZoom?: number
+  maxZoom?: number
+}) => {
+  if (!map) {
+    return
+  }
+
+  map.setMinZoom(view.minZoom ?? 4)
+  map.setMaxZoom(view.maxZoom ?? 10)
+  map.setView(view.center, view.zoom)
+}
+
+const loadGeojson = async () => {
+  if (!map) {
+    return
+  }
+
+  try {
+    const response = await fetch(props.geojsonUrl ?? DEFAULT_GEOJSON_URL)
+
+    if (!response.ok) {
+      throw new Error('Failed to load map data.')
+    }
+
+    const geojson = (await response.json()) as GeoJSON.FeatureCollection
+    buildLayer(geojson)
+    capitalLayer?.rebuild(props.capitalPoints)
+    capitalLayer?.setVisible(props.uiState.capitalsEnabled)
+  } catch (error) {
+    console.error('Map data error:', error)
+  }
+}
+
 onMounted(async () => {
   if (!mapEl.value) {
     return
@@ -552,8 +615,7 @@ onMounted(async () => {
   capitalPane.style.zIndex = '650'
 
   ensureCapitalLayer()
-
-  map.setView(view.center, view.zoom)
+  updateView(view)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -564,20 +626,7 @@ onMounted(async () => {
     map?.invalidateSize()
   })
 
-  try {
-    const response = await fetch(GEOJSON_URL)
-
-    if (!response.ok) {
-      throw new Error('Failed to load map data.')
-    }
-
-    const geojson = (await response.json()) as GeoJSON.FeatureCollection
-    buildLayer(geojson)
-    capitalLayer?.rebuild(props.capitalPoints)
-    capitalLayer?.setVisible(props.uiState.capitalsEnabled)
-  } catch (error) {
-    console.error('Map data error:', error)
-  }
+  await loadGeojson()
 })
 
 onBeforeUnmount(() => {
@@ -605,6 +654,25 @@ watch(
     capitalLayer?.applyStyles()
     capitalLayer?.setVisible(props.uiState.capitalsEnabled)
   }
+)
+
+watch(
+  () => [props.geojsonUrl, props.featureCodeKey, props.featureNameKey],
+  () => {
+    void loadGeojson()
+  }
+)
+
+watch(
+  () => props.mapView,
+  (next) => {
+    if (!next) {
+      return
+    }
+
+    updateView(next)
+  },
+  { deep: true }
 )
 
 watch(

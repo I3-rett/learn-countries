@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useGameState } from '../useGameState'
 import type { CountryInfo } from '../../services/countryApi'
 import { fetchCountries } from '../../services/countryApi'
-import type { ContinentConfig } from '../../data/continents'
+import type { MapConfig } from '../../data/maps'
+import { fetchGeojsonAreas } from '../../services/geojsonAreas'
 
 type GameState = ReturnType<typeof useGameState>
 type GameStateVm = {
@@ -30,6 +31,12 @@ const mockCountries: Record<string, CountryInfo> = {
 
 vi.mock('../../services/countryApi', () => ({
   fetchCountries: vi.fn(async () => mockCountries),
+}))
+
+vi.mock('../../services/geojsonAreas', () => ({
+  fetchGeojsonAreas: vi.fn(async () => ({
+    '11': { code: '11', name: 'Ile-de-France', capital: 'Unknown' },
+  })),
 }))
 
 const createHarness = () =>
@@ -184,33 +191,43 @@ describe('useGameState', () => {
     expect(vm.actionDisabled).toBe(true)
   })
 
-  it('reloads data when the continent changes', async () => {
-    const baseContinent: ContinentConfig = {
+  it('reloads data when the map changes', async () => {
+    const baseContinent: MapConfig = {
       id: 'europe',
       label: 'Europe',
-      editionLabel: 'Europe Edition',
+      kind: 'countries',
       codes: ['FR', 'DE'],
+      geojsonUrl: undefined,
+      geojsonCodeKey: undefined,
+      geojsonNameKey: undefined,
       quickSelect: [],
       mapView: { center: [0, 0], zoom: 2, minZoom: 1, maxZoom: 6 },
       cacheKey: 'test-europe-cache',
+      supportsFlags: true,
+      supportsCapitals: true,
     }
 
-    const nextContinent: ContinentConfig = {
+    const nextContinent: MapConfig = {
       id: 'custom',
       label: 'Custom',
-      editionLabel: 'Custom Edition',
+      kind: 'countries',
       codes: ['DE'],
+      geojsonUrl: undefined,
+      geojsonCodeKey: undefined,
+      geojsonNameKey: undefined,
       quickSelect: [],
       mapView: { center: [5, 5], zoom: 3, minZoom: 1, maxZoom: 6 },
       cacheKey: 'test-custom-cache',
+      supportsFlags: true,
+      supportsCapitals: true,
     }
 
     const wrapper = mount(
       defineComponent({
         setup() {
-          const continent = ref(baseContinent)
-          const state = useGameState({ continent })
-          return { continent, ...state }
+          const map = ref(baseContinent)
+          const state = useGameState({ map })
+          return { map, ...state }
         },
         template: '<div />',
       })
@@ -218,14 +235,59 @@ describe('useGameState', () => {
 
     await flushPromises()
 
-    const vm = wrapper.vm as unknown as GameStateVm & { continent: ContinentConfig }
+    const vm = wrapper.vm as unknown as GameStateVm & { map: MapConfig }
     expect(vm.targetCode).toBe('FR')
     expect(fetchCountries).toHaveBeenCalledWith(['FR', 'DE'], 'test-europe-cache')
 
-    vm.continent = nextContinent
+    vm.map = nextContinent
     await flushPromises()
 
     expect(fetchCountries).toHaveBeenCalledWith(['DE'], 'test-custom-cache')
+    wrapper.unmount()
+  })
+
+  it('loads geojson maps and disables unsupported toggles', async () => {
+    localStorage.setItem(
+      'learn-countries:settings',
+      JSON.stringify({ flagsEnabled: true, capitalsEnabled: true })
+    )
+
+    const geoMap: MapConfig = {
+      id: 'fr-regions',
+      label: 'France Regions',
+      kind: 'geojson',
+      geojsonUrl: 'https://example.com/fr-regions.geojson',
+      geojsonCodeKey: 'code',
+      geojsonNameKey: 'nom',
+      cacheKey: 'test-fr-regions-cache',
+      quickSelect: [],
+      mapView: { center: [46.6, 2.4], zoom: 5.4, minZoom: 5, maxZoom: 8 },
+      supportsFlags: false,
+      supportsCapitals: false,
+    }
+
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          return useGameState({ map: ref(geoMap) })
+        },
+        template: '<div />',
+      })
+    )
+
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as GameStateVm
+    expect(fetchGeojsonAreas).toHaveBeenCalledWith({
+      url: 'https://example.com/fr-regions.geojson',
+      codeKey: 'code',
+      nameKey: 'nom',
+      cacheKey: 'test-fr-regions-cache',
+    })
+    expect(fetchCountries).not.toHaveBeenCalledWith([], 'test-fr-regions-cache')
+    expect(vm.flagsEnabled).toBe(false)
+    expect(vm.capitalsEnabled).toBe(false)
+
     wrapper.unmount()
   })
 })

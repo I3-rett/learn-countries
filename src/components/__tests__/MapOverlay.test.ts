@@ -16,6 +16,8 @@ const baseProps: {
     statusLabel: string
     flagsEnabled: boolean
     capitalsEnabled: boolean
+    supportsFlags: boolean
+    supportsCapitals: boolean
     score: {
       nameScore: number
       nameTotal: number
@@ -39,6 +41,8 @@ const baseProps: {
     statusLabel: 'Make your pick',
     flagsEnabled: false,
     capitalsEnabled: false,
+    supportsFlags: true,
+    supportsCapitals: true,
     score: {
       nameScore: 1,
       nameTotal: 5,
@@ -88,6 +92,22 @@ describe('MapOverlay', () => {
 
     expect(wrapper.emitted('toggle-flags')).toBeTruthy()
     expect(wrapper.emitted('toggle-capitals')).toBeTruthy()
+  })
+
+  it('hides toggles when difficulty is unsupported', () => {
+    const wrapper = mount(MapOverlay, {
+      props: {
+        ...baseProps,
+        uiState: {
+          ...baseProps.uiState,
+          supportsFlags: false,
+          supportsCapitals: false,
+        },
+      },
+    })
+
+    const inputs = wrapper.findAll('input[type="checkbox"]')
+    expect(inputs.length).toBe(0)
   })
 
   it('emits reset when the new game button is clicked', async () => {

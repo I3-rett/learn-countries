@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, unref, type ComputedRef, type Ref } from 'vue'
 import { fetchCountries, type CountryInfo } from '../services/countryApi'
-import { EUROPE_CONTINENT, type ContinentConfig } from '../data/continents'
+import { fetchGeojsonAreas } from '../services/geojsonAreas'
+import { EUROPE_MAP, type MapConfig } from '../data/maps'
 
 export type Stage = 'name' | 'flag' | 'capital'
 
@@ -61,15 +62,15 @@ const writeSettings = (settings: { flagsEnabled: boolean; capitalsEnabled: boole
 
 type Progress = { name: boolean; flag: boolean; capital: boolean }
 
-type ContinentSource = ContinentConfig | Ref<ContinentConfig> | ComputedRef<ContinentConfig>
+type MapSource = MapConfig | Ref<MapConfig> | ComputedRef<MapConfig>
 
 type UseGameStateOptions = {
-  continent?: ContinentSource
+  map?: MapSource
 }
 
 export const useGameState = (options: UseGameStateOptions = {}) => {
-  const continentSource = options.continent ?? EUROPE_CONTINENT
-  const activeContinent = computed(() => unref(continentSource))
+  const mapSource = options.map ?? EUROPE_MAP
+  const activeMap = computed(() => unref(mapSource))
   const persisted = readSettings()
   const loading = ref(true)
   const errorMessage = ref('')
@@ -161,12 +162,16 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
       return ''
     }
 
-    const override = activeContinent.value.plonkitOverrides?.[targetCode.value]
+    const override = activeMap.value.plonkitOverrides?.[targetCode.value]
     const slug = override ?? toPlonkitSlug(targetCountry.value.name)
     return `https://www.plonkit.net/${slug}`
   })
 
   const nameTotal = computed(() => Object.keys(countries.value).length)
+  const supportsFlags = computed(() => activeMap.value.supportsFlags)
+  const supportsCapitals = computed(() => activeMap.value.supportsCapitals)
+  const flagsActive = computed(() => flagsEnabled.value && supportsFlags.value)
+  const capitalsActive = computed(() => capitalsEnabled.value && supportsCapitals.value)
   const flagTotal = computed(() =>
     Object.values(countries.value).filter((country) => country.flagUrl).length
   )
@@ -205,8 +210,8 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
         const completed = isCodeComplete(code, progress)
         const anyProgress =
           progress.name ||
-          (flagsEnabled.value && progress.flag) ||
-          (capitalsEnabled.value && progress.capital)
+          (flagsActive.value && progress.flag) ||
+          (capitalsActive.value && progress.capital)
         return anyProgress && !completed
       })
       .map(([code]) => code)
@@ -223,6 +228,8 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
       }))
   )
 
+  const availableCodes = computed(() => Object.keys(countries.value))
+
   const getProgress = (code: string) => {
     if (!progressByCode.has(code)) {
       progressByCode.set(code, { name: false, flag: false, capital: false })
@@ -234,11 +241,11 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
   const getAvailableStages = (code: string) => {
     const stages: Stage[] = ['name']
 
-    if (flagsEnabled.value && countries.value[code]?.flagUrl) {
+    if (flagsActive.value && countries.value[code]?.flagUrl) {
       stages.push('flag')
     }
 
-    if (capitalsEnabled.value && countries.value[code]?.capitalLatLng) {
+    if (capitalsActive.value && countries.value[code]?.capitalLatLng) {
       stages.push('capital')
     }
 
@@ -265,8 +272,8 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
     code: string,
     progress: Progress
   ) => {
-    const hasFlag = flagsEnabled.value && !!countries.value[code]?.flagUrl
-    const hasCapital = capitalsEnabled.value && !!countries.value[code]?.capitalLatLng
+    const hasFlag = flagsActive.value && !!countries.value[code]?.flagUrl
+    const hasCapital = capitalsActive.value && !!countries.value[code]?.capitalLatLng
     return (
       progress.name &&
       (!hasFlag || progress.flag) &&
@@ -468,14 +475,34 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
     stage.value = 'name'
   }
 
-  const loadContinent = async (next: ContinentConfig) => {
+  const loadMap = async (next: MapConfig) => {
     loading.value = true
     errorMessage.value = ''
     countries.value = {}
     resetProgress()
 
+    if (!next.supportsFlags) {
+      flagsEnabled.value = false
+    }
+
+    if (!next.supportsCapitals) {
+      capitalsEnabled.value = false
+    }
+
     try {
-      countries.value = await fetchCountries(next.codes, next.cacheKey)
+      if (next.kind === 'geojson') {
+        if (!next.geojsonUrl || !next.geojsonCodeKey || !next.geojsonNameKey) {
+          throw new Error('Missing geojson config.')
+        }
+        countries.value = await fetchGeojsonAreas({
+          url: next.geojsonUrl,
+          codeKey: next.geojsonCodeKey,
+          nameKey: next.geojsonNameKey,
+          cacheKey: next.cacheKey,
+        })
+      } else {
+        countries.value = await fetchCountries(next.codes ?? [], next.cacheKey)
+      }
       pickNewTarget()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : 'Failed to load data.'
@@ -486,17 +513,17 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
 
   onMounted(async () => {
     window.addEventListener('keydown', handleSpaceKey)
-    await loadContinent(activeContinent.value)
+    await loadMap(activeMap.value)
   })
 
   watch(
-    () => activeContinent.value.id,
+    () => activeMap.value.id,
     async (nextId, prevId) => {
       if (nextId === prevId) {
         return
       }
 
-      await loadContinent(activeContinent.value)
+      await loadMap(activeMap.value)
     }
   )
 
@@ -531,15 +558,18 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
     actionDisabled,
     actionLabel,
     answerSummary,
+    availableCodes,
     capitalPoints,
     capitalScore,
     capitalTotal,
     capitalsEnabled,
+    capitalsActive,
     errorMessage,
     failedCodesList,
     flagScore,
     flagTotal,
     flagsEnabled,
+    flagsActive,
     foundCodesList,
     handleGuess,
     handlePrimaryAction,
@@ -557,6 +587,8 @@ export const useGameState = (options: UseGameStateOptions = {}) => {
     selectedCountry,
     stage,
     statusLabel,
+    supportsCapitals,
+    supportsFlags,
     targetCode,
     targetCountry,
     targetTitle,

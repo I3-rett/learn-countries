@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import ContinentMap from './components/ContinentMap.vue'
-import { CONTINENTS, EUROPE_CONTINENT } from './data/continents'
+import TrainingMap from './components/TrainingMap.vue'
+import { MAPS, EUROPE_MAP } from './data/maps'
 import { useGameState } from './composables/useGameState'
 
-const continents = CONTINENTS
-const selectedContinentId = ref(continents[0]?.id ?? EUROPE_CONTINENT.id)
-const continent = computed(
-  () => continents.find((entry) => entry.id === selectedContinentId.value) ?? EUROPE_CONTINENT
+const maps = MAPS
+const selectedMapId = ref(maps[0]?.id ?? EUROPE_MAP.id)
+const activeMap = computed(
+  () => maps.find((entry) => entry.id === selectedMapId.value) ?? EUROPE_MAP
 )
 
 const {
@@ -43,15 +43,22 @@ const {
   targetCountry,
   targetTitle,
   selectedCode,
-} = useGameState({ continent })
+  availableCodes,
+  capitalsActive,
+  flagsActive,
+  supportsCapitals,
+  supportsFlags,
+} = useGameState({ map: activeMap })
 
 const mapUiState = computed(() => ({
   actionLabel: actionLabel.value,
   actionDisabled: actionDisabled.value,
   actionHighlight: !actionDisabled.value && actionLabel.value === 'Confirm',
   statusLabel: statusLabel.value,
-  flagsEnabled: flagsEnabled.value,
-  capitalsEnabled: capitalsEnabled.value,
+    flagsEnabled: flagsActive.value,
+    capitalsEnabled: capitalsActive.value,
+    supportsFlags: supportsFlags.value,
+    supportsCapitals: supportsCapitals.value,
   score: {
     nameScore: nameScore.value,
     nameTotal: nameTotal.value,
@@ -59,8 +66,8 @@ const mapUiState = computed(() => ({
     flagTotal: flagTotal.value,
     capitalScore: capitalScore.value,
     capitalTotal: capitalTotal.value,
-    flagsEnabled: flagsEnabled.value,
-    capitalsEnabled: capitalsEnabled.value,
+      flagsEnabled: flagsActive.value,
+      capitalsEnabled: capitalsActive.value,
   },
 }))
 </script>
@@ -71,16 +78,16 @@ const mapUiState = computed(() => ({
       <div class="max-w-2xl">
         <div class="flex flex-wrap gap-2">
           <button
-            v-for="entry in continents"
+            v-for="entry in maps"
             :key="entry.id"
             type="button"
             class="tag border border-transparent transition"
             :class="
-              entry.id === continent.id
+              entry.id === activeMap.id
                 ? 'border-ink/20 bg-ink text-white'
                 : 'border-ink/15 bg-white text-ink/70 hover:border-ink/30'
             "
-            @click="selectedContinentId = entry.id"
+            @click="selectedMapId = entry.id"
           >
             {{ entry.label }}
           </button>
@@ -95,7 +102,7 @@ const mapUiState = computed(() => ({
 
     <main class="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
       <section class="panel h-full p-5 md:p-6">
-        <ContinentMap
+        <TrainingMap
           :target-code="targetCode"
           :selected-code="selectedCode"
           :reveal="reveal"
@@ -104,9 +111,12 @@ const mapUiState = computed(() => ({
           :failed-codes="failedCodesList"
           :capital-points="capitalPoints"
           :stage="stage"
-          :available-codes="continent.codes"
-          :quick-select-countries="continent.quickSelect"
-          :map-view="continent.mapView"
+          :available-codes="availableCodes"
+          :quick-select-countries="activeMap.quickSelect"
+          :map-view="activeMap.mapView"
+          :geojson-url="activeMap.geojsonUrl"
+          :feature-code-key="activeMap.geojsonCodeKey"
+          :feature-name-key="activeMap.geojsonNameKey"
           :ui-state="mapUiState"
           @update:flags-enabled="flagsEnabled = $event"
           @update:capitals-enabled="capitalsEnabled = $event"
@@ -176,7 +186,7 @@ const mapUiState = computed(() => ({
                     Region
                   </p>
                   <p class="mt-2 text-sm font-semibold text-ink md:text-base">
-                    {{ targetCountry?.subregion || targetCountry?.region || continent.label }}
+                    {{ targetCountry?.subregion || targetCountry?.region || activeMap.label }}
                   </p>
                 </div>
               </div>

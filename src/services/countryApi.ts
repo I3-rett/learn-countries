@@ -1,4 +1,4 @@
-import { EUROPE_CONTINENT } from '../data/continents'
+import { EUROPE_MAP } from '../data/maps'
 
 export type CountryCode = string
 
@@ -198,5 +198,5 @@ export async function fetchCountries(
 }
 
 export async function fetchEuropeCountries(): Promise<Record<CountryCode, CountryInfo>> {
-  return fetchCountries(EUROPE_CONTINENT.codes, EUROPE_CONTINENT.cacheKey)
+  return fetchCountries(EUROPE_MAP.codes ?? [], EUROPE_MAP.cacheKey)
 }

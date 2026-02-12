@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import ContinentMap from '../ContinentMap.vue'
+import TrainingMap from '../TrainingMap.vue'
 import { createCapitalLayer } from '../../services/capitalMarkers'
 
 const createdLayers: Array<{
@@ -12,6 +12,8 @@ vi.mock('leaflet', () => {
   const map = () => ({
     createPane: () => ({ style: {} }),
     setView: vi.fn(),
+    setMinZoom: vi.fn(),
+    setMaxZoom: vi.fn(),
     invalidateSize: vi.fn(),
     fitBounds: vi.fn(),
     remove: vi.fn(),
@@ -82,6 +84,8 @@ const geojsonPayload: GeoJSON.FeatureCollection = {
       properties: {
         ISO_A2: 'FR',
         NAME: 'France',
+        code: 'FR',
+        nom: 'France',
       },
       geometry: {
         type: 'Polygon',
@@ -115,6 +119,8 @@ const baseProps = {
     statusLabel: 'Make your pick',
     flagsEnabled: false,
     capitalsEnabled: false,
+    supportsFlags: true,
+    supportsCapitals: true,
     score: {
       nameScore: 0,
       nameTotal: 1,
@@ -134,7 +140,7 @@ const makeFetchResponse = (payload: GeoJSON.FeatureCollection) =>
     json: async () => payload,
   }) as Promise<Response>
 
-describe('ContinentMap', () => {
+describe('TrainingMap', () => {
   beforeEach(() => {
     createdLayers.length = 0
 
@@ -158,7 +164,7 @@ describe('ContinentMap', () => {
   })
 
   it('emits country-selected when a map feature is clicked', async () => {
-    const wrapper = mount(ContinentMap, {
+    const wrapper = mount(TrainingMap, {
       props: baseProps,
       global: { stubs: { MapOverlay: true } },
     })
@@ -177,7 +183,7 @@ describe('ContinentMap', () => {
   })
 
   it('ignores country clicks during the capital stage', async () => {
-    const wrapper = mount(ContinentMap, {
+    const wrapper = mount(TrainingMap, {
       props: { ...baseProps, stage: 'capital' as const },
       global: { stubs: { MapOverlay: true } },
     })
@@ -202,7 +208,7 @@ describe('ContinentMap', () => {
       dispose: vi.fn(),
     })
 
-    const wrapper = mount(ContinentMap, {
+    const wrapper = mount(TrainingMap, {
       props: baseProps,
       global: { stubs: { MapOverlay: true } },
     })
@@ -219,5 +225,28 @@ describe('ContinentMap', () => {
     })
 
     expect(setVisible).toHaveBeenCalledWith(true)
+  })
+
+  it('uses custom feature keys for geojson maps', async () => {
+    const wrapper = mount(TrainingMap, {
+      props: {
+        ...baseProps,
+        availableCodes: [],
+        featureCodeKey: 'code',
+        featureNameKey: 'nom',
+      },
+      global: { stubs: { MapOverlay: true } },
+    })
+
+    await flushPromises()
+
+    const layerEntry = createdLayers.find((entry) =>
+      (entry.feature.properties as { code?: string }).code === 'FR'
+    )
+
+    layerEntry?.handlers.click?.()
+
+    expect(wrapper.emitted('country-selected')).toBeTruthy()
+    expect(wrapper.emitted('country-selected')?.[0]).toEqual(['FR'])
   })
 })

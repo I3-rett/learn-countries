@@ -1,3 +1,3 @@
-export { EUROPE_CODES } from './continents'
+export { EUROPE_CODES } from './maps'
 
-export type EuropeCode = (typeof import('./continents').EUROPE_CODES)[number]
+export type EuropeCode = (typeof import('./maps').EUROPE_CODES)[number]
