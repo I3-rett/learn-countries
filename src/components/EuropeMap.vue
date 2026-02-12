@@ -668,80 +668,78 @@ watch(
 <template>
   <div class="relative h-[62vh] min-h-[420px] w-full overflow-hidden rounded-3xl border border-ink/10">
     <div ref="mapEl" class="relative z-0 h-full w-full"></div>
-    <div class="absolute right-4 top-4 z-10 rounded-2xl border border-ink/10 bg-white/95 px-4 py-3 text-xs text-ink shadow-2xl backdrop-blur">
-      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Score</p>
-      <p class="mt-2 font-semibold">Names: {{ props.nameScore }}/{{ props.nameTotal }}</p>
-      <p v-if="props.flagsEnabled" class="font-semibold">Flags: {{ props.flagScore }}/{{ props.flagTotal }}</p>
-      <p v-if="props.capitalsEnabled" class="font-semibold">
-        Capitals: {{ props.capitalScore }}/{{ props.capitalTotal }}
-      </p>
-    </div>
-    <div class="absolute bottom-4 left-4 z-10 flex flex-wrap gap-3">
-      <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
-      <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">
-        Quick Select
-      </p>
-      <div class="mt-2 flex flex-wrap gap-2">
-        <button
-          v-for="country in tinyCountryQuickSelect"
-          :key="country.code"
-          type="button"
-          class="rounded-full border border-ink/10 px-3 py-1 text-xs font-semibold text-ink transition"
-          :class="{
-            'bg-white hover:border-ink/30 hover:bg-ink/5': canQuickSelect(country.code),
-            'cursor-not-allowed bg-ink/5 text-ink/40': !canQuickSelect(country.code),
-            'border-emerald-400/60 bg-emerald-100 text-emerald-900': props.foundCodes.includes(country.code),
-            'border-orange-400/60 bg-orange-100 text-orange-900': props.partialCodes.includes(country.code),
-            'border-red-400/60 bg-red-100 text-red-900': props.failedCodes.includes(country.code),
-          }"
-          @click="handleQuickSelect(country.code)"
-        >
-          {{ country.name }}
-        </button>
-      </div>
-    </div>
-      <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Difficulty</p>
-        <div class="mt-2 flex flex-col gap-2">
-          <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
-            <input
-              type="checkbox"
-              class="h-4 w-4 rounded border-ink/30"
-              :checked="props.flagsEnabled"
-              @change="handleFlagsToggle"
-            />
-            Flags
-          </label>
-          <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
-            <input
-              type="checkbox"
-              class="h-4 w-4 rounded border-ink/30"
-              :checked="props.capitalsEnabled"
-              @change="handleCapitalsToggle"
-            />
-            Capitals
-          </label>
-        </div>
-      </div>
-    </div>
-    <div
-      class="absolute bottom-4 right-4 z-10 rounded-2xl border border-ink/10 bg-white/95 p-4 shadow-2xl backdrop-blur"
-      :class="{
-        'ring-2 ring-emerald-300/70': !props.actionDisabled && props.actionLabel === 'Confirm',
-      }"
-    >
+    <div class="absolute right-4 top-4 z-10">
       <button
         type="button"
-        class="mt-3 h-11 rounded-full border border-ink/10 px-6 text-sm font-semibold text-ink transition"
+        class="m-0 h-11 rounded-full border border-ink/10 px-6 text-sm font-semibold text-ink transition"
         :class="{
           'bg-ink text-white hover:bg-ink/90': !props.actionDisabled,
-          'cursor-not-allowed bg-ink/5 text-ink/40': props.actionDisabled,
+          'cursor-not-allowed bg-white text-ink/40': props.actionDisabled,
+          'ring-2 ring-emerald-300/70': !props.actionDisabled && props.actionLabel === 'Confirm',
         }"
         :disabled="props.actionDisabled"
         @click="handleConfirmAction"
       >
         {{ actionButtonLabel }}
       </button>
+    </div>
+    <div class="absolute bottom-4 left-4 right-4 z-10 flex items-center justify-between gap-3">
+      <div class="flex flex-wrap gap-3">
+        <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">
+            Quick Select
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="country in tinyCountryQuickSelect"
+              :key="country.code"
+              type="button"
+              class="rounded-full border border-ink/10 px-3 py-1 text-xs font-semibold text-ink transition"
+              :class="{
+                'bg-white hover:border-ink/30 hover:bg-ink/5': canQuickSelect(country.code),
+                'cursor-not-allowed bg-ink/5 text-ink/40': !canQuickSelect(country.code),
+                'border-emerald-400/60 bg-emerald-100 text-emerald-900': props.foundCodes.includes(country.code),
+                'border-orange-400/60 bg-orange-100 text-orange-900': props.partialCodes.includes(country.code),
+                'border-red-400/60 bg-red-100 text-red-900': props.failedCodes.includes(country.code),
+              }"
+              @click="handleQuickSelect(country.code)"
+            >
+              {{ country.name }}
+            </button>
+          </div>
+        </div>
+        <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Difficulty</p>
+          <div class="mt-2 flex flex-col gap-2">
+            <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+              <input
+                type="checkbox"
+                class="h-4 w-4 rounded border-ink/30"
+                :checked="props.flagsEnabled"
+                @change="handleFlagsToggle"
+              />
+              Flags
+            </label>
+            <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
+              <input
+                type="checkbox"
+                class="h-4 w-4 rounded border-ink/30"
+                :checked="props.capitalsEnabled"
+                @change="handleCapitalsToggle"
+              />
+              Capitals
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-2xl border border-ink/10 bg-white/95 mr-8 px-4 py-3 text-xs text-ink shadow-2xl backdrop-blur">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Score</p>
+        <p class="mt-2 font-semibold">Names: {{ props.nameScore }}/{{ props.nameTotal }}</p>
+        <p v-if="props.flagsEnabled" class="font-semibold">Flags: {{ props.flagScore }}/{{ props.flagTotal }}</p>
+        <p v-if="props.capitalsEnabled" class="font-semibold">
+          Capitals: {{ props.capitalScore }}/{{ props.capitalTotal }}
+        </p>
+      </div>
     </div>
   </div>
 </template>
