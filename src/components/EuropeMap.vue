@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import { EUROPE_CODES } from '../data/europe'
+import MapOverlay from './MapOverlay.vue'
+import { createCapitalLayer } from '../services/capitalMarkers'
 
 type Stage = 'name' | 'flag' | 'capital'
 
@@ -13,21 +15,25 @@ type Props = {
   partialCodes: string[]
   failedCodes: string[]
   capitalPoints: Array<{ code: string; name: string; lat: number; lng: number }>
-  showCapitals: boolean
   stage: Stage
-  actionLabel: string
-  actionDisabled: boolean
-  statusLabel: string
-  statusTone: string
-  hintLabel: string
-  flagsEnabled: boolean
-  capitalsEnabled: boolean
-  nameScore: number
-  nameTotal: number
-  flagScore: number
-  flagTotal: number
-  capitalScore: number
-  capitalTotal: number
+  uiState: {
+    actionLabel: string
+    actionDisabled: boolean
+    actionHighlight: boolean
+    statusLabel: string
+    flagsEnabled: boolean
+    capitalsEnabled: boolean
+    score: {
+      nameScore: number
+      nameTotal: number
+      flagScore: number
+      flagTotal: number
+      capitalScore: number
+      capitalTotal: number
+      flagsEnabled: boolean
+      capitalsEnabled: boolean
+    }
+  }
 }
 
 const props = defineProps<Props>()
@@ -36,16 +42,13 @@ const emit = defineEmits<{
   (event: 'confirm-action'): void
   (event: 'update:flags-enabled', value: boolean): void
   (event: 'update:capitals-enabled', value: boolean): void
+  (event: 'reset-game'): void
 }>()
 
 const mapEl = ref<HTMLDivElement | null>(null)
-const mapCenter = ref<{ lat: number; lng: number } | null>(null)
-const mapZoom = ref<number | null>(null)
-
 let map: L.Map | null = null
 let geoLayer: L.GeoJSON | null = null
-let capitalLayer: L.LayerGroup | null = null
-let capitalMarkers = new Map<string, L.CircleMarker>()
+let capitalLayer: ReturnType<typeof createCapitalLayer> | null = null
 
 const GEOJSON_URL =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
@@ -350,47 +353,38 @@ const handleQuickSelect = (code: string) => {
 }
 
 const handleConfirmAction = () => {
-  if (props.actionDisabled) {
+  if (props.uiState.actionDisabled) {
     return
   }
 
   emit('confirm-action')
 }
 
-const actionButtonLabel = computed(() =>
-  props.actionDisabled ? props.statusLabel : props.actionLabel
+const handleResetGame = () => {
+  emit('reset-game')
+}
+
+const quickSelectItems = computed(() =>
+  tinyCountryQuickSelect.map((country) => {
+    const disabled = !canQuickSelect(country.code)
+    let tone: 'default' | 'found' | 'partial' | 'failed' = 'default'
+
+    if (props.foundCodes.includes(country.code)) {
+      tone = 'found'
+    } else if (props.partialCodes.includes(country.code)) {
+      tone = 'partial'
+    } else if (props.failedCodes.includes(country.code)) {
+      tone = 'failed'
+    }
+
+    return {
+      code: country.code,
+      name: country.name,
+      disabled,
+      tone,
+    }
+  })
 )
-
-const handleFlagsToggle = (event: Event) => {
-  const target = event.target as HTMLInputElement | null
-  if (!target) {
-    return
-  }
-
-  emit('update:flags-enabled', target.checked)
-}
-
-const handleCapitalsToggle = (event: Event) => {
-  const target = event.target as HTMLInputElement | null
-  if (!target) {
-    return
-  }
-
-  emit('update:capitals-enabled', target.checked)
-}
-
-const updateMapView = () => {
-  if (!map) {
-    return
-  }
-
-  const center = map.getCenter()
-  mapCenter.value = {
-    lat: Number(center.lat.toFixed(4)),
-    lng: Number(center.lng.toFixed(4)),
-  }
-  mapZoom.value = Number(map.getZoom().toFixed(2))
-}
 
 const applyLayerStyles = () => {
   if (!geoLayer) {
@@ -421,7 +415,7 @@ const applyLayerStyles = () => {
 }
 
 const getCapitalMarkerStyle = (code: string) => {
-  if (!props.showCapitals) {
+  if (!props.uiState.capitalsEnabled) {
     return { ...capitalBaseStyle, fillOpacity: 0, opacity: 0 }
   }
 
@@ -448,73 +442,27 @@ const getCapitalMarkerStyle = (code: string) => {
   return capitalBaseStyle
 }
 
-const updateCapitalLayerVisibility = () => {
-  if (!map || !capitalLayer) {
-    return
-  }
+const isCapitalInteractive = () => props.stage === 'capital' && !props.reveal
 
-  if (!props.showCapitals) {
-    if (map.hasLayer(capitalLayer)) {
-      map.removeLayer(capitalLayer)
-    }
-    return
-  }
+const canSelectCapital = (code: string) =>
+  isCapitalInteractive() &&
+  !props.foundCodes.includes(code) &&
+  !props.failedCodes.includes(code)
 
-  if (!map.hasLayer(capitalLayer)) {
-    capitalLayer.addTo(map)
-  }
-}
-
-const rebuildCapitalMarkers = () => {
+const ensureCapitalLayer = () => {
   if (!map) {
     return
   }
 
-  if (capitalLayer) {
-    map.removeLayer(capitalLayer)
+  if (!capitalLayer) {
+    capitalLayer = createCapitalLayer({
+      map,
+      getMarkerStyle: getCapitalMarkerStyle,
+      canSelect: canSelectCapital,
+      isInteractive: isCapitalInteractive,
+      onSelect: (code) => emit('country-selected', code),
+    })
   }
-
-  capitalLayer = L.layerGroup()
-  capitalMarkers = new Map()
-
-  props.capitalPoints.forEach((point) => {
-    const marker = L.circleMarker([point.lat, point.lng], getCapitalMarkerStyle(point.code))
-
-    marker.on('click', () => {
-      if (props.stage !== 'capital' || props.reveal) {
-        return
-      }
-
-      if (props.foundCodes.includes(point.code) || props.failedCodes.includes(point.code)) {
-        return
-      }
-
-      emit('country-selected', point.code)
-    })
-
-    marker.on('mouseover', () => {
-      if (props.stage !== 'capital' || props.reveal) {
-        return
-      }
-
-      marker.setStyle({ ...getCapitalMarkerStyle(point.code), radius: 7 })
-    })
-
-    marker.on('mouseout', () => {
-      marker.setStyle(getCapitalMarkerStyle(point.code))
-    })
-
-    marker.addTo(capitalLayer as L.LayerGroup)
-    capitalMarkers.set(point.code, marker)
-  })
-
-  updateCapitalLayerVisibility()
-}
-
-const applyCapitalStyles = () => {
-  capitalMarkers.forEach((marker, code) => {
-    marker.setStyle(getCapitalMarkerStyle(code))
-  })
 }
 
 const buildLayer = (geojson: GeoJSON.FeatureCollection) => {
@@ -597,17 +545,14 @@ onMounted(async () => {
   const capitalPane = map.createPane('capitals')
   capitalPane.style.zIndex = '650'
 
-  map.setView([49.5822, 2.714], 4.5)
+  ensureCapitalLayer()
 
-  updateMapView()
-  map.on('moveend zoomend', updateMapView)
+  map.setView([49.5822, 2.714], 4.5)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     maxZoom: 10,
   }).addTo(map)
-
-  L.control.zoom({ position: 'bottomright' }).addTo(map)
 
   requestAnimationFrame(() => {
     map?.invalidateSize()
@@ -622,19 +567,19 @@ onMounted(async () => {
 
     const geojson = (await response.json()) as GeoJSON.FeatureCollection
     buildLayer(geojson)
-    rebuildCapitalMarkers()
+    capitalLayer?.rebuild(props.capitalPoints)
+    capitalLayer?.setVisible(props.uiState.capitalsEnabled)
   } catch (error) {
     console.error('Map data error:', error)
   }
 })
 
 onBeforeUnmount(() => {
-  map?.off('moveend zoomend', updateMapView)
   map?.remove()
   map = null
   geoLayer = null
+  capitalLayer?.dispose()
   capitalLayer = null
-  capitalMarkers = new Map()
 })
 
 watch(
@@ -646,20 +591,21 @@ watch(
     props.partialCodes,
     props.failedCodes,
     props.stage,
-    props.showCapitals,
+    props.uiState.capitalsEnabled,
   ],
   () => {
     applyLayerStyles()
-    applyCapitalStyles()
-    updateCapitalLayerVisibility()
+    capitalLayer?.applyStyles()
+    capitalLayer?.setVisible(props.uiState.capitalsEnabled)
   }
 )
 
 watch(
   () => props.capitalPoints,
   () => {
-    rebuildCapitalMarkers()
-    applyCapitalStyles()
+    ensureCapitalLayer()
+    capitalLayer?.rebuild(props.capitalPoints)
+    capitalLayer?.applyStyles()
   },
   { deep: true }
 )
@@ -668,78 +614,14 @@ watch(
 <template>
   <div class="relative h-[62vh] min-h-[420px] w-full overflow-hidden rounded-3xl border border-ink/10">
     <div ref="mapEl" class="relative z-0 h-full w-full"></div>
-    <div class="absolute right-4 top-4 z-10">
-      <button
-        type="button"
-        class="m-0 h-11 rounded-full border border-ink/10 px-6 text-sm font-semibold text-ink transition"
-        :class="{
-          'bg-ink text-white hover:bg-ink/90': !props.actionDisabled,
-          'cursor-not-allowed bg-white text-ink/40': props.actionDisabled,
-          'ring-2 ring-emerald-300/70': !props.actionDisabled && props.actionLabel === 'Confirm',
-        }"
-        :disabled="props.actionDisabled"
-        @click="handleConfirmAction"
-      >
-        {{ actionButtonLabel }}
-      </button>
-    </div>
-    <div class="absolute bottom-4 left-4 right-4 z-10 flex items-center justify-between gap-3">
-      <div class="flex flex-wrap gap-3">
-        <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
-          <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">
-            Quick Select
-          </p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <button
-              v-for="country in tinyCountryQuickSelect"
-              :key="country.code"
-              type="button"
-              class="rounded-full border border-ink/10 px-3 py-1 text-xs font-semibold text-ink transition"
-              :class="{
-                'bg-white hover:border-ink/30 hover:bg-ink/5': canQuickSelect(country.code),
-                'cursor-not-allowed bg-ink/5 text-ink/40': !canQuickSelect(country.code),
-                'border-emerald-400/60 bg-emerald-100 text-emerald-900': props.foundCodes.includes(country.code),
-                'border-orange-400/60 bg-orange-100 text-orange-900': props.partialCodes.includes(country.code),
-                'border-red-400/60 bg-red-100 text-red-900': props.failedCodes.includes(country.code),
-              }"
-              @click="handleQuickSelect(country.code)"
-            >
-              {{ country.name }}
-            </button>
-          </div>
-        </div>
-        <div class="rounded-2xl bg-white/90 p-3 shadow-lg backdrop-blur">
-          <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Difficulty</p>
-          <div class="mt-2 flex flex-col gap-2">
-            <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
-              <input
-                type="checkbox"
-                class="h-4 w-4 rounded border-ink/30"
-                :checked="props.flagsEnabled"
-                @change="handleFlagsToggle"
-              />
-              Flags
-            </label>
-            <label class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink/70">
-              <input
-                type="checkbox"
-                class="h-4 w-4 rounded border-ink/30"
-                :checked="props.capitalsEnabled"
-                @change="handleCapitalsToggle"
-              />
-              Capitals
-            </label>
-          </div>
-        </div>
-      </div>
-      <div class="rounded-2xl border border-ink/10 bg-white/95 mr-8 px-4 py-3 text-xs text-ink shadow-2xl backdrop-blur">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-ink/70">Score</p>
-        <p class="mt-2 font-semibold">Names: {{ props.nameScore }}/{{ props.nameTotal }}</p>
-        <p v-if="props.flagsEnabled" class="font-semibold">Flags: {{ props.flagScore }}/{{ props.flagTotal }}</p>
-        <p v-if="props.capitalsEnabled" class="font-semibold">
-          Capitals: {{ props.capitalScore }}/{{ props.capitalTotal }}
-        </p>
-      </div>
-    </div>
+    <MapOverlay
+      :quick-select-items="quickSelectItems"
+      :ui-state="props.uiState"
+      @quick-select="handleQuickSelect"
+      @toggle-flags="emit('update:flags-enabled', $event)"
+      @toggle-capitals="emit('update:capitals-enabled', $event)"
+      @action="handleConfirmAction"
+      @reset="handleResetGame"
+    />
   </div>
 </template>

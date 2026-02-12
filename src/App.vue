@@ -1,424 +1,61 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import EuropeMap from './components/EuropeMap.vue'
-import { fetchEuropeCountries, type CountryInfo } from './services/countryApi'
-
-const loading = ref(true)
-const errorMessage = ref('')
-const countries = ref<Record<string, CountryInfo>>({})
-const flagsEnabled = ref(false)
-const capitalsEnabled = ref(false)
-
-type Stage = 'name' | 'flag' | 'capital'
-
-const targetCode = ref<string | null>(null)
-const selectedCode = ref<string | null>(null)
-const reveal = ref(false)
-const isCorrect = ref<boolean | null>(null)
-const foundCodes = ref(new Set<string>())
-const failedCodes = ref(new Set<string>())
-const stage = ref<Stage>('name')
-const progressByCode = ref<Record<string, { name: boolean; flag: boolean; capital: boolean }>>({})
-
-const targetCountry = computed(() =>
-  targetCode.value ? countries.value[targetCode.value] : undefined
-)
-const selectedCountry = computed(() =>
-  selectedCode.value ? countries.value[selectedCode.value] : undefined
-)
-const isFlagStage = computed(() => stage.value === 'flag')
-const isCapitalStage = computed(() => stage.value === 'capital')
-const targetTitle = computed(() => {
-  if (isFlagStage.value) {
-    return 'Which country is this flag?'
-  }
-
-  if (isCapitalStage.value) {
-    return targetCountry.value?.capital
-      ? `Find "${targetCountry.value.capital}".`
-      : 'Find the capital city.'
-  }
-
-  return promptLabel.value
-})
-
-const statusLabel = computed(() => {
-  if (!reveal.value) {
-    return 'Make your pick'
-  }
-
-  return isCorrect.value ? 'Correct' : 'Try again'
-})
-
-const statusTone = computed(() => {
-  if (!reveal.value) {
-    return 'bg-white/70 text-ink'
-  }
-
-  return isCorrect.value ? 'bg-jade/90 text-white' : 'bg-ember text-white'
-})
-
-const promptLabel = computed(() => {
-  if (loading.value) {
-    return 'Loading country data...'
-  }
-
-  if (errorMessage.value) {
-    return 'Unable to load countries.'
-  }
-
-  return targetCountry.value?.name ?? 'Ready for a new round?'
-})
-
-const instructionLabel = computed(() =>
-  isCapitalStage.value
-    ? 'Click the capital city marker that matches the prompt, then confirm your choice.'
-    : 'Click the country that matches the prompt, then confirm your choice.'
-)
-
-const hintLabel = computed(() => {
-  if (loading.value || errorMessage.value) {
-    return isCapitalStage.value
-      ? 'Click the capital city marker.'
-      : 'Click the country outline on the map.'
-  }
-
-  if (!reveal.value || !targetCountry.value) {
-    return isCapitalStage.value
-      ? 'Click the capital city marker.'
-      : 'Click the country outline on the map.'
-  }
-
-  return `Capital: ${targetCountry.value.capital}`
-})
-
-const answerSummary = computed(() => {
-  if (!reveal.value || !targetCountry.value) {
-    return 'Pick a country to reveal its details.'
-  }
-
-  if (isCorrect.value) {
-    const progress = targetCode.value ? progressByCode.value[targetCode.value] : undefined
-    const completed = progress && targetCode.value
-      ? isCodeComplete(targetCode.value, progress)
-      : false
-    return completed
-      ? `You completed ${targetCountry.value.name}.`
-      : `Correct!`
-  }
-
-  return `The correct answer was ${targetCountry.value.name}.`
-})
-
-const PLONKIT_OVERRIDES: Record<string, string> = {
-  BA: 'bosnia-and-herzegovina',
-  CZ: 'czechia',
-  GB: 'united-kingdom',
-  MK: 'north-macedonia',
-  VA: 'vatican-city',
-  XK: 'kosovo',
-}
-
-const toPlonkitSlug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/['.]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-
-const plonkitUrl = computed(() => {
-  if (!targetCountry.value || !targetCode.value) {
-    return ''
-  }
-
-  const override = PLONKIT_OVERRIDES[targetCode.value]
-  const slug = override ?? toPlonkitSlug(targetCountry.value.name)
-  return `https://www.plonkit.net/${slug}`
-})
-
-const nameTotal = computed(() => Object.keys(countries.value).length)
-const flagTotal = computed(() =>
-  Object.values(countries.value).filter((country) => country.flagUrl).length
-)
-const capitalTotal = computed(() =>
-  Object.values(countries.value).filter((country) => country.capitalLatLng).length
-)
-
-const nameScore = computed(() =>
-  Object.entries(progressByCode.value).reduce(
-    (sum, [, progress]) => sum + (progress.name ? 1 : 0),
-    0
-  )
-)
-const flagScore = computed(() =>
-  Object.entries(countries.value).reduce((sum, [code, country]) => {
-    if (!country.flagUrl) {
-      return sum
-    }
-    return sum + (progressByCode.value[code]?.flag ? 1 : 0)
-  }, 0)
-)
-const capitalScore = computed(() =>
-  Object.entries(countries.value).reduce((sum, [code, country]) => {
-    if (!country.capitalLatLng) {
-      return sum
-    }
-    return sum + (progressByCode.value[code]?.capital ? 1 : 0)
-  }, 0)
-)
-
-const foundCodesList = computed(() => Array.from(foundCodes.value))
-const failedCodesList = computed(() => Array.from(failedCodes.value))
-const partialCodesList = computed(() =>
-  Object.entries(progressByCode.value)
-    .filter(([code, progress]) => {
-      const completed = isCodeComplete(code, progress)
-      const anyProgress =
-        progress.name ||
-        (flagsEnabled.value && progress.flag) ||
-        (capitalsEnabled.value && progress.capital)
-      return anyProgress && !completed
-    })
-    .map(([code]) => code)
-)
-
-const capitalPoints = computed(() =>
-  Object.values(countries.value)
-    .filter((country) => country.capitalLatLng)
-    .map((country) => ({
-      code: country.code,
-      name: country.capital,
-      lat: country.capitalLatLng?.lat ?? 0,
-      lng: country.capitalLatLng?.lng ?? 0,
-    }))
-)
-
-const getProgress = (code: string) => {
-  if (!progressByCode.value[code]) {
-    progressByCode.value[code] = { name: false, flag: false, capital: false }
-  }
-
-  return progressByCode.value[code]
-}
-
-const getAvailableStages = (code: string) => {
-  const stages: Stage[] = ['name']
-
-  if (flagsEnabled.value && countries.value[code]?.flagUrl) {
-    stages.push('flag')
-  }
-
-  if (capitalsEnabled.value && countries.value[code]?.capitalLatLng) {
-    stages.push('capital')
-  }
-
-  return stages
-}
-
-const isStageComplete = (
-  progress: { name: boolean; flag: boolean; capital: boolean },
-  stageValue: Stage
-) => {
-  switch (stageValue) {
-    case 'name':
-      return progress.name
-    case 'flag':
-      return progress.flag
-    case 'capital':
-      return progress.capital
-    default:
-      return false
-  }
-}
-
-const isCodeComplete = (code: string, progress: { name: boolean; flag: boolean; capital: boolean }) => {
-  const hasFlag = flagsEnabled.value && !!countries.value[code]?.flagUrl
-  const hasCapital = capitalsEnabled.value && !!countries.value[code]?.capitalLatLng
-  return (
-    progress.name &&
-    (!hasFlag || progress.flag) &&
-    (!hasCapital || progress.capital)
-  )
-}
-
-const getInitialStage = (code: string): Stage => {
-  const stages = getAvailableStages(code)
-  return stages[Math.floor(Math.random() * stages.length)] ?? 'name'
-}
-
-const getStageForCode = (code: string): Stage => {
-  const progress = getProgress(code)
-  const remainingStages = getAvailableStages(code).filter(
-    (stageValue) => !isStageComplete(progress, stageValue)
-  )
-
-  if (!remainingStages.length) {
-    return getInitialStage(code)
-  }
-
-  if (remainingStages.length === 1) {
-    return remainingStages[0] ?? 'name'
-  }
-
-  return remainingStages[Math.floor(Math.random() * remainingStages.length)] ?? 'name'
-}
-
-const pickNewTarget = () => {
-  const availableCodes = Object.keys(countries.value).filter(
-    (code) => !foundCodes.value.has(code) && !failedCodes.value.has(code)
-  )
-
-  if (!availableCodes.length) {
-    return
-  }
-
-  const nextIndex = Math.floor(Math.random() * availableCodes.length)
-  const nextCode = availableCodes[nextIndex] ?? null
-  targetCode.value = nextCode
-  selectedCode.value = null
-  reveal.value = false
-  isCorrect.value = null
-  stage.value = nextCode ? getStageForCode(nextCode) : 'name'
-}
-
-const refreshFoundCodes = () => {
-  const refreshed = new Set<string>()
-  Object.entries(progressByCode.value).forEach(([code, progress]) => {
-    if (isCodeComplete(code, progress)) {
-      refreshed.add(code)
-    }
-  })
-  foundCodes.value = refreshed
-}
-
-const handleGuess = (code: string) => {
-  if (reveal.value) {
-    return
-  }
-
-  selectedCode.value = code
-}
-
-const confirmGuess = () => {
-  if (!selectedCode.value || !targetCode.value) {
-    return
-  }
-
-  reveal.value = true
-  isCorrect.value = selectedCode.value === targetCode.value
-  if (isCorrect.value) {
-    const progress = getProgress(targetCode.value)
-
-    if (stage.value === 'name') {
-      if (!progress.name) {
-        progress.name = true
-      }
-    } else if (stage.value === 'flag') {
-      if (!progress.flag) {
-        progress.flag = true
-      }
-    } else if (stage.value === 'capital') {
-      if (!progress.capital) {
-        progress.capital = true
-      }
-    }
-
-    if (isCodeComplete(targetCode.value, progress)) {
-      foundCodes.value.add(targetCode.value)
-    }
-  } else {
-    failedCodes.value.add(targetCode.value)
-  }
-}
-
-const advanceRound = () => {
-  if (!targetCode.value) {
-    pickNewTarget()
-    return
-  }
-
-  pickNewTarget()
-}
-
-const actionLabel = computed(() => (reveal.value ? 'Next' : 'Confirm'))
-const actionDisabled = computed(() => {
-  if (loading.value || !!errorMessage.value) {
-    return true
-  }
-
-  if (reveal.value) {
-    return false
-  }
-
-  return !selectedCode.value
-})
-
-const handlePrimaryAction = () => {
-  if (actionDisabled.value) {
-    return
-  }
-
-  if (reveal.value) {
-    advanceRound()
-  } else {
-    confirmGuess()
-  }
-}
-
-const shouldIgnoreSpace = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  return !!target.closest('input, textarea, select, [contenteditable="true"]')
-}
-
-const handleSpaceKey = (event: KeyboardEvent) => {
-  if (event.code !== 'Space' && event.key !== ' ') {
-    return
-  }
-
-  if (shouldIgnoreSpace(event.target)) {
-    return
-  }
-
-  event.preventDefault()
-  handlePrimaryAction()
-}
-
-
-onMounted(async () => {
-  window.addEventListener('keydown', handleSpaceKey)
-
-  try {
-    countries.value = await fetchEuropeCountries()
-    pickNewTarget()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load data.'
-  } finally {
-    loading.value = false
-  }
-})
-
-watch([flagsEnabled, capitalsEnabled], () => {
-  refreshFoundCodes()
-  if (!targetCode.value) {
-    return
-  }
-
-  const availableStages = getAvailableStages(targetCode.value)
-  if (!availableStages.includes(stage.value)) {
-    stage.value = getStageForCode(targetCode.value)
-    selectedCode.value = null
-    reveal.value = false
-    isCorrect.value = null
-  }
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleSpaceKey)
-})
+import { useGameState } from './composables/useGameState'
+
+const {
+  actionDisabled,
+  actionLabel,
+  answerSummary,
+  capitalPoints,
+  capitalScore,
+  capitalTotal,
+  capitalsEnabled,
+  errorMessage,
+  failedCodesList,
+  flagScore,
+  flagTotal,
+  flagsEnabled,
+  foundCodesList,
+  handleGuess,
+  handlePrimaryAction,
+  instructionLabel,
+  isCapitalStage,
+  isCorrect,
+  isFlagStage,
+  nameScore,
+  nameTotal,
+  partialCodesList,
+  plonkitUrl,
+  reveal,
+  resetGame,
+  selectedCountry,
+  stage,
+  statusLabel,
+  targetCode,
+  targetCountry,
+  targetTitle,
+  selectedCode,
+} = useGameState()
+
+const mapUiState = computed(() => ({
+  actionLabel: actionLabel.value,
+  actionDisabled: actionDisabled.value,
+  actionHighlight: !actionDisabled.value && actionLabel.value === 'Confirm',
+  statusLabel: statusLabel.value,
+  flagsEnabled: flagsEnabled.value,
+  capitalsEnabled: capitalsEnabled.value,
+  score: {
+    nameScore: nameScore.value,
+    nameTotal: nameTotal.value,
+    flagScore: flagScore.value,
+    flagTotal: flagTotal.value,
+    capitalScore: capitalScore.value,
+    capitalTotal: capitalTotal.value,
+    flagsEnabled: flagsEnabled.value,
+    capitalsEnabled: capitalsEnabled.value,
+  },
+}))
 </script>
 
 <template>
@@ -444,25 +81,13 @@ onBeforeUnmount(() => {
           :partial-codes="partialCodesList"
           :failed-codes="failedCodesList"
           :capital-points="capitalPoints"
-          :show-capitals="capitalsEnabled"
           :stage="stage"
-          :action-label="actionLabel"
-          :action-disabled="actionDisabled"
-          :status-label="statusLabel"
-          :status-tone="statusTone"
-          :hint-label="hintLabel"
-          :flags-enabled="flagsEnabled"
-          :capitals-enabled="capitalsEnabled"
-          :name-score="nameScore"
-          :name-total="nameTotal"
-          :flag-score="flagScore"
-          :flag-total="flagTotal"
-          :capital-score="capitalScore"
-          :capital-total="capitalTotal"
+          :ui-state="mapUiState"
           @update:flags-enabled="flagsEnabled = $event"
           @update:capitals-enabled="capitalsEnabled = $event"
           @country-selected="handleGuess"
           @confirm-action="handlePrimaryAction"
+          @reset-game="resetGame"
         />
       </section>
 
