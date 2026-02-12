@@ -48,8 +48,6 @@ const createHarness = () =>
   })
 
 
-import { vi } from 'vitest'
-// ...existing code...
 
 describe('useGameState', () => {
   it('only Europe countries are selectable on initial load', async () => {
