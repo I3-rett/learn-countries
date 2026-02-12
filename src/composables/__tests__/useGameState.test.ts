@@ -1,11 +1,3 @@
-it('only Europe countries are selectable on initial load', async () => {
-  const { availableCodes } = useGameState()
-  // Wait for the map to load
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  // Europe codes are defined in the map config
-  const { EUROPE_CODES } = await import('../../data/maps')
-  expect(availableCodes.value.sort()).toEqual([...EUROPE_CODES].sort())
-})
 import { defineComponent, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -56,7 +48,26 @@ const createHarness = () =>
   })
 
 
+import { vi } from 'vitest'
+// ...existing code...
+
 describe('useGameState', () => {
+  it('only Europe countries are selectable on initial load', async () => {
+    // Mock fetchCountries to return all Europe codes as loaded countries
+    const { EUROPE_CODES } = await import('../../data/maps')
+    vi.mocked(fetchCountries).mockResolvedValue(
+      Object.fromEntries(EUROPE_CODES.map((code) => [code, { code, name: code, capital: '', capitalLatLng: undefined }]))
+    )
+    const wrapper = mount({
+      template: '<div />',
+      setup() {
+        return useGameState()
+      },
+    })
+    await flushPromises()
+    const vm = wrapper.vm as any
+    expect(vm.availableCodes.sort()).toEqual([...EUROPE_CODES].sort())
+  })
   beforeEach(() => {
     localStorage.clear()
     vi.spyOn(Math, 'random').mockReturnValue(0)
